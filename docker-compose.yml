@@ -1,0 +1,117 @@
+services:
+
+  # ── MoveIt + real arm (no camera) ─────────────────────────────────────────
+  # docker compose up moveit
+  moveit:
+    build:
+      context: .
+      dockerfile: Dockerfile.moveit
+    image: so101-moveit:latest
+    environment:
+      - DISPLAY=${DISPLAY}
+      - QT_X11_NO_MITSHM=1
+      - QT_QPA_PLATFORM=xcb
+      - LIBGL_ALWAYS_SOFTWARE=1
+      - MESA_GL_VERSION_OVERRIDE=3.3
+      - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+      - SO101_URDF_FILE=/ros2_ws/so101_follower_real.urdf
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ${HOME}/.cache/huggingface/lerobot/calibration/robots/so_follower/papu_ros2.json:/calibration/papu.json:ro
+    devices:
+      - /dev/ttyACM0:/dev/ttyACM0
+    group_add:
+      - dialout
+    network_mode: host
+    ipc: host
+    privileged: false
+    command: >
+      ros2 launch so101_bringup follower_moveit_demo.launch.py
+        hardware_type:=real
+        usb_port:=/dev/ttyACM0
+        joint_config_file:=/calibration/papu.json
+        use_rviz:=true
+
+  # ── MoveIt + real arm + RealSense D435 + blue-object detector ─────────────
+  # docker compose up perception
+  perception:
+    build:
+      context: .
+      dockerfile: Dockerfile.moveit
+    image: so101-moveit:latest
+    environment:
+      - DISPLAY=${DISPLAY}
+      - QT_X11_NO_MITSHM=1
+      - QT_QPA_PLATFORM=xcb
+      - LIBGL_ALWAYS_SOFTWARE=1
+      - MESA_GL_VERSION_OVERRIDE=3.3
+      - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+      - SO101_URDF_FILE=/ros2_ws/so101_follower_real.urdf
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ${HOME}/.cache/huggingface/lerobot/calibration/robots/so_follower/papu_ros2.json:/calibration/papu.json:ro
+    devices:
+      - /dev/ttyACM0:/dev/ttyACM0
+    group_add:
+      - dialout
+    network_mode: host
+    ipc: host
+    privileged: true
+    command: >
+      ros2 launch so101_perception perception_with_robot.launch.py
+        hardware_type:=real
+        usb_port:=/dev/ttyACM0
+        joint_config_file:=/calibration/papu.json
+        start_rviz:=true
+
+  # ── RealSense D435 + blue-object detector only (no arm required) ───────────
+  # docker compose up perception-only
+  perception-only:
+    build:
+      context: .
+      dockerfile: Dockerfile.moveit
+    image: so101-moveit:latest
+    environment:
+      - DISPLAY=${DISPLAY}
+      - QT_X11_NO_MITSHM=1
+      - QT_QPA_PLATFORM=xcb
+      - LIBGL_ALWAYS_SOFTWARE=1
+      - MESA_GL_VERSION_OVERRIDE=3.3
+      - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+    network_mode: host
+    ipc: host
+    privileged: true
+    command: >
+      ros2 launch so101_perception blue_detector.launch.py
+        use_rviz:=true
+
+  # ── Interactive shell inside the container ─────────────────────────────────
+  # docker compose run --rm shell
+  shell:
+    build:
+      context: .
+      dockerfile: Dockerfile.moveit
+    image: so101-moveit:latest
+    environment:
+      - DISPLAY=${DISPLAY}
+      - QT_X11_NO_MITSHM=1
+      - QT_QPA_PLATFORM=xcb
+      - LIBGL_ALWAYS_SOFTWARE=1
+      - MESA_GL_VERSION_OVERRIDE=3.3
+      - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+      - SO101_URDF_FILE=/ros2_ws/so101_follower_real.urdf
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ${HOME}/.cache/huggingface/lerobot/calibration/robots/so_follower/papu_ros2.json:/calibration/papu.json:ro
+    devices:
+      - /dev/ttyACM0:/dev/ttyACM0
+    group_add:
+      - dialout
+    network_mode: host
+    ipc: host
+    privileged: false
+    stdin_open: true
+    tty: true
+    command: bash

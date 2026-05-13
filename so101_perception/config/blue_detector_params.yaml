@@ -1,0 +1,62 @@
+# Parameters for so101_perception/blue_object_detector node
+#
+# Topics must match what the realsense2_camera driver publishes.
+# Default namespace for the driver is /camera/camera (node name "camera"
+# inside namespace "camera"), hence the /camera/camera/... prefix.
+
+blue_object_detector:
+  ros__parameters:
+
+    # ── TF bridge ────────────────────────────────────────────────────────────
+    # The node broadcasts a static TF: parent_link → camera_color_optical_frame.
+    # This connects the RealSense camera frames into the robot TF tree so RViz
+    # can display the detected point alongside the robot model.
+    #
+    # parent_link: a frame already in the robot TF tree (the gripper link).
+    # mount_*:     transform from parent_link to camera_color_optical_frame.
+    #              Quaternion = composition of the wrist-camera URDF joint
+    #              (rpy=-π/2,0,-π/2) and the standard optical-frame rotation.
+    #              Adjust these values if your camera mount differs.
+    parent_link: "moving_jaw_so101_v1_link"
+    mount_x:   0.0
+    mount_y:   0.0
+    mount_z:  -0.02
+    mount_qx: -0.5
+    mount_qy:  0.5
+    mount_qz: -0.5
+    mount_qw: -0.5
+
+    # ── Output frame ─────────────────────────────────────────────────────────
+    target_frame: "base_link"
+
+    # ── Input topics ──────────────────────────────────────────────────────────
+    color_image_topic: "/camera/camera/color/image_raw"
+    depth_image_topic: "/camera/camera/aligned_depth_to_color/image_raw"
+    camera_info_topic: "/camera/camera/color/camera_info"
+
+    # ── Blue HSV thresholds ───────────────────────────────────────────────────
+    # OpenCV convention: H ∈ [0, 179],  S/V ∈ [0, 255]
+    #
+    # These values target "standard" blue objects under typical indoor lighting.
+    # Increase S_lower if you get false positives from white/grey areas.
+    # Adjust H range if your object is more cyan (H≈90) or violet (H≈140).
+    #
+    #           H    S    V
+    hsv_lower: [100, 80,  50]   # lower bound (inclusive)
+    hsv_upper: [130, 255, 255]  # upper bound (inclusive)
+
+    # ── Detection quality ─────────────────────────────────────────────────────
+    # Minimum contour area in pixels.  Raise to ignore small noise blobs.
+    min_contour_area: 500
+
+    # ── Depth ─────────────────────────────────────────────────────────────────
+    # RealSense uint16 depth is in millimetres → multiply by 0.001 for metres.
+    depth_scale: 0.001
+
+    # Detections beyond this distance (metres) are discarded.
+    max_depth_m: 3.0
+
+    # ── Visualisation ─────────────────────────────────────────────────────────
+    # How long (seconds) the RViz sphere marker is displayed before fading.
+    # Set to 0.0 to keep it until the next update.
+    marker_lifetime_s: 1.0

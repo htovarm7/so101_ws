@@ -1,0 +1,11 @@
+# Camera config that replaces the default gscam cameras with the
+# RealSense D435 on the static mount.
+# Usage:
+#   ros2 launch so101_bringup follower_vision.launch.py \
+#       cameras_config_file:=$(ros2 pkg prefix so101_bringup)/share/so101_bringup/config/cameras/so101_cameras_realsense.yaml
+
+cameras:
+  - name: cam_static
+    camera_type: realsense2_camera
+    param_path: so101_realsense2.yaml
+    namespace: camera
