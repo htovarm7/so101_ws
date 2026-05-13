@@ -1,0 +1,78 @@
+FROM moveit/moveit2:jazzy-release
+
+# Use bash for all RUN steps — ROS setup scripts use bash-specific syntax
+# that /bin/sh (dash) rejects with "Bad substitution"
+SHELL ["/bin/bash", "-c"]
+
+ARG DEBIAN_FRONTEND=noninteractive
+
+# ROS packages + system deps for feetech_ros2_driver
+RUN apt-get update && apt-get install -y \
+    git \
+    ros-jazzy-pick-ik \
+    ros-jazzy-joint-state-publisher \
+    ros-jazzy-joint-state-publisher-gui \
+    ros-jazzy-xacro \
+    ros-jazzy-tf-transformations \
+    ros-jazzy-tf2-ros \
+    ros-jazzy-controller-manager \
+    ros-jazzy-ros2-control \
+    ros-jazzy-ros2-controllers \
+    ros-jazzy-joint-trajectory-controller \
+    ros-jazzy-joint-state-broadcaster \
+    ros-jazzy-forward-command-controller \
+    ros-jazzy-rmw-cyclonedds-cpp \
+    python3-transforms3d \
+    python3-colcon-common-extensions \
+    libfmt-dev \
+    libspdlog-dev \
+    librange-v3-dev \
+    libyaml-cpp-dev \
+    libserial-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# tl_expected is header-only and not in apt — install from source
+RUN git clone --depth 1 https://github.com/TartanLlama/expected.git /tmp/expected \
+    && cmake -S /tmp/expected -B /tmp/expected/build -DEXPECTED_BUILD_TESTS=OFF \
+    && cmake --install /tmp/expected/build \
+    && rm -rf /tmp/expected
+
+WORKDIR /ros2_ws
+
+# Copy workspace source
+COPY . src/so101_ros/
+
+# Clone feetech_ros2_driver (submodule not initialized locally)
+RUN git clone --branch feat/joint-config-and-calibration --depth 1 --recurse-submodules \
+    https://github.com/legalaspro/feetech_ros2_driver.git \
+    src/so101_ros/feetech_ros2_driver
+
+# Build all packages needed for real-hardware MoveIt
+RUN source /opt/ros/jazzy/setup.bash && \
+    colcon build \
+      --packages-select \
+        so101_description \
+        so101_kinematics_msgs \
+        so101_moveit_config \
+        so101_bringup \
+        feetech_ros2_driver \
+      --cmake-args -DCMAKE_BUILD_TYPE=Release \
+    && rm -rf build log
+
+# Pre-generate URDF (build-time diagnostic + avoids runtime xacro subprocess issues).
+# usb_port and joint_config_file are fixed for this Docker image.
+RUN source /opt/ros/jazzy/setup.bash && source /ros2_ws/install/setup.bash && \
+    xacro /ros2_ws/install/so101_description/share/so101_description/urdf/so101_arm.urdf.xacro \
+      variant:=follower \
+      use_ros2_control:=true \
+      hardware_type:=real \
+      usb_port:=/dev/ttyACM0 \
+      joint_config_file:=/calibration/papu.json \
+      -o /ros2_ws/so101_follower_real.urdf && \
+    echo "URDF pre-generation OK: $(wc -c < /ros2_ws/so101_follower_real.urdf) bytes"
+
+COPY docker/ros_entrypoint.sh /ros_entrypoint.sh
+RUN chmod +x /ros_entrypoint.sh
+
+ENTRYPOINT ["/ros_entrypoint.sh"]
+CMD ["bash"]
