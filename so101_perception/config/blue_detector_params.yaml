@@ -7,10 +7,26 @@
 blue_object_detector:
   ros__parameters:
 
+    # ── TF bridge ────────────────────────────────────────────────────────────
+    # The node broadcasts a static TF: parent_link → camera_color_optical_frame.
+    # This connects the RealSense camera frames into the robot TF tree so RViz
+    # can display the detected point alongside the robot model.
+    #
+    # parent_link: a frame already in the robot TF tree (the gripper link).
+    # mount_*:     transform from parent_link to camera_color_optical_frame.
+    #              Quaternion = composition of the wrist-camera URDF joint
+    #              (rpy=-π/2,0,-π/2) and the standard optical-frame rotation.
+    #              Adjust these values if your camera mount differs.
+    parent_link: "moving_jaw_so101_v1_link"
+    mount_x:   0.0
+    mount_y:   0.0
+    mount_z:  -0.02
+    mount_qx: -0.5
+    mount_qy:  0.5
+    mount_qz: -0.5
+    mount_qw: -0.5
+
     # ── Output frame ─────────────────────────────────────────────────────────
-    # Transform detections into this frame before publishing.
-    # Use the robot base frame so RViz never needs to do a TF lookup on the
-    # stamped messages (avoids "queue is full" / "discarding message" warnings).
     target_frame: "base_link"
 
     # ── Input topics ──────────────────────────────────────────────────────────
@@ -43,4 +59,4 @@ blue_object_detector:
     # ── Visualisation ─────────────────────────────────────────────────────────
     # How long (seconds) the RViz sphere marker is displayed before fading.
     # Set to 0.0 to keep it until the next update.
-    marker_lifetime_s: 0.3
+    marker_lifetime_s: 1.0
