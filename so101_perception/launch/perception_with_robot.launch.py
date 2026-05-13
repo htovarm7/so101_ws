@@ -20,9 +20,6 @@ Full path from robot base to the detected-object frame:
 RViz shows the live robot model and the blue-sphere marker in the same scene.
 """
 
-import os
-
-from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
 from launch.conditions import IfCondition
@@ -33,26 +30,16 @@ from launch_ros.substitutions import FindPackageShare
 
 
 def generate_launch_description():
-    pkg_perception = get_package_share_directory("so101_perception")
-    pkg_bringup    = get_package_share_directory("so101_bringup")
 
     # ── Launch arguments ───────────────────────────────────────────────────────
     hardware_type     = LaunchConfiguration("hardware_type")
     usb_port          = LaunchConfiguration("usb_port")
     joint_config_file = LaunchConfiguration("joint_config_file")
-    use_rviz          = LaunchConfiguration("use_rviz")
+    start_rviz        = LaunchConfiguration("start_rviz")
     realsense_params  = LaunchConfiguration("realsense_params")
     detector_params   = LaunchConfiguration("detector_params")
     camera_namespace  = LaunchConfiguration("camera_namespace")
 
-    # Camera mount offset — each value is a separate arg so they can be passed
-    # cleanly to static_transform_publisher
-    cam_x     = LaunchConfiguration("cam_x")
-    cam_y     = LaunchConfiguration("cam_y")
-    cam_z     = LaunchConfiguration("cam_z")
-    cam_roll  = LaunchConfiguration("cam_roll")
-    cam_pitch = LaunchConfiguration("cam_pitch")
-    cam_yaw   = LaunchConfiguration("cam_yaw")
 
     default_rs_params  = PathJoinSubstitution(
         [FindPackageShare("so101_perception"), "config", "realsense_d435.yaml"]
@@ -60,12 +47,14 @@ def generate_launch_description():
     default_det_params = PathJoinSubstitution(
         [FindPackageShare("so101_perception"), "config", "blue_detector_params.yaml"]
     )
-    combined_rviz = os.path.join(pkg_perception, "rviz", "perception_with_robot.rviz")
+    combined_rviz = PathJoinSubstitution(
+        [FindPackageShare("so101_perception"), "rviz", "perception_with_robot.rviz"]
+    )
 
     # ── 1. Robot arm + MoveIt (no RViz — we launch our own below) ─────────────
     robot_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
-            os.path.join(pkg_bringup, "launch", "follower_moveit_demo.launch.py")
+            PathJoinSubstitution([FindPackageShare("so101_bringup"), "launch", "follower_moveit_demo.launch.py"])
         ),
         launch_arguments={
             "hardware_type":     hardware_type,
@@ -87,22 +76,25 @@ def generate_launch_description():
     )
 
     # ── 3. Static TF: gripper link → RealSense body ────────────────────────────
-    # Parent : moving_jaw_so101_v1_link  (gripper, no namespace prefix in this stack)
-    # Child  : camera_link               (RealSense base frame published by driver)
-    # Defaults: so101_cameras.xacro wrist-camera mount values
+    # Parent : moving_jaw_so101_v1_link  (gripper, no namespace prefix)
+    # Child  : camera_link               (RealSense base frame from driver)
+    #
+    # Positional format: x y z yaw pitch roll frame_id child_frame_id
+    # Values from so101_cameras.xacro wrist-camera defaults:
+    #   xyz = 0 0 -0.02   rpy = -1.5708 0 -1.5708  →  yaw=-1.5708 pitch=0 roll=-1.5708
+    #
+    # NOTE: named-flag style (--roll/--pitch/--yaw) is NOT supported in
+    # tf2_ros Jazzy; use the positional format instead.
+    # To adjust for your physical mount, change the values below and rebuild.
     camera_tf = Node(
         package="tf2_ros",
         executable="static_transform_publisher",
         name="wrist_cam_to_camera_link_tf",
         arguments=[
-            "--x",             cam_x,
-            "--y",             cam_y,
-            "--z",             cam_z,
-            "--roll",          cam_roll,
-            "--pitch",         cam_pitch,
-            "--yaw",           cam_yaw,
-            "--frame-id",      "moving_jaw_so101_v1_link",
-            "--child-frame-id", "camera_link",
+            "0", "0", "-0.02",          # x y z  (metres)
+            "-1.5708", "0", "-1.5708",  # yaw pitch roll  (radians)
+            "moving_jaw_so101_v1_link",
+            "camera_link",
         ],
         output="screen",
     )
@@ -123,7 +115,7 @@ def generate_launch_description():
         executable="rviz2",
         name="rviz2",
         arguments=["-d", combined_rviz],
-        condition=IfCondition(use_rviz),
+        condition=IfCondition(start_rviz),
         output="screen",
     )
 
@@ -131,23 +123,10 @@ def generate_launch_description():
         DeclareLaunchArgument("hardware_type",     default_value="real"),
         DeclareLaunchArgument("usb_port",          default_value="/dev/ttyACM0"),
         DeclareLaunchArgument("joint_config_file", default_value=""),
-        DeclareLaunchArgument("use_rviz",          default_value="true"),
+        DeclareLaunchArgument("start_rviz",        default_value="true"),
         DeclareLaunchArgument("camera_namespace",  default_value="camera"),
         DeclareLaunchArgument("realsense_params",  default_value=default_rs_params),
         DeclareLaunchArgument("detector_params",   default_value=default_det_params),
-        # Wrist-camera mount offset (so101_cameras.xacro defaults)
-        DeclareLaunchArgument("cam_x",     default_value="0.0",
-                              description="Camera X offset from moving_jaw link (m)"),
-        DeclareLaunchArgument("cam_y",     default_value="0.0",
-                              description="Camera Y offset from moving_jaw link (m)"),
-        DeclareLaunchArgument("cam_z",     default_value="-0.02",
-                              description="Camera Z offset from moving_jaw link (m)"),
-        DeclareLaunchArgument("cam_roll",  default_value="-1.5708",
-                              description="Camera roll  relative to gripper (rad)"),
-        DeclareLaunchArgument("cam_pitch", default_value="0.0",
-                              description="Camera pitch relative to gripper (rad)"),
-        DeclareLaunchArgument("cam_yaw",   default_value="-1.5708",
-                              description="Camera yaw   relative to gripper (rad)"),
         robot_launch,
         realsense_node,
         camera_tf,

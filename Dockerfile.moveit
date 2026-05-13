@@ -39,6 +39,8 @@ RUN apt-get update && apt-get install -y \
     ros-jazzy-image-transport \
     ros-jazzy-vision-opencv \
     ros-jazzy-message-filters \
+    ros-jazzy-tf2-geometry-msgs \
+    ros-jazzy-tf2-py \
     python3-opencv \
     && rm -rf /var/lib/apt/lists/*
 
