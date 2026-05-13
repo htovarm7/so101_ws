@@ -9,7 +9,6 @@ Panels:
         - /TF1
         - /BlueObject Marker1
         - /BlueObject Point1
-        - /Debug Camera1
       Splitter Ratio: 0.5
     Tree Height: 750
   - Class: rviz_common/Selection
@@ -28,7 +27,7 @@ Visualization Manager:
   Class: ""
   Displays:
 
-    # ── Scene grid ──────────────────────────────────────────────────────────
+    # ── Scene grid ────────────────────────────────────────────────────────────
     - Alpha: 0.5
       Cell Size: 0.1
       Class: rviz_default_plugins/Grid
@@ -48,7 +47,9 @@ Visualization Manager:
       Reference Frame: <Fixed Frame>
       Value: true
 
-    # ── Robot model ──────────────────────────────────────────────────────────
+    # ── Robot model ───────────────────────────────────────────────────────────
+    # Description Source "Topic" reads /follower/robot_description published
+    # by robot_state_publisher running in the "follower" namespace.
     - Alpha: 1
       Class: rviz_default_plugins/RobotModel
       Collision Enabled: false
@@ -67,7 +68,7 @@ Visualization Manager:
       Value: true
       Visual Enabled: true
 
-    # ── TF tree (shows camera_link attached to gripper in real-time) ─────────
+    # ── TF (show camera_link attached to gripper) ─────────────────────────────
     - Class: rviz_default_plugins/TF
       Enabled: true
       Frame Timeout: 15
@@ -81,7 +82,7 @@ Visualization Manager:
           Value: true
         camera_color_optical_frame:
           Value: true
-      Marker Scale: 0.1
+      Marker Scale: 0.08
       Name: TF
       Show Arrows: false
       Show Axes: true
@@ -91,7 +92,7 @@ Visualization Manager:
       Update Interval: 0
       Value: true
 
-    # ── Blue sphere at detected object position ────────────────────────────
+    # ── Blue sphere at detected object 3-D position ───────────────────────────
     - Class: rviz_default_plugins/Marker
       Enabled: true
       Name: BlueObject Marker
@@ -102,7 +103,7 @@ Visualization Manager:
       Unreliable: true
       Value: true
 
-    # ── PointStamped trail (last 30 detections) ──────────────────────────
+    # ── PointStamped trail (last 30 detections) ───────────────────────────────
     - Axes Length: 0.05
       Axes Radius: 0.005
       Class: rviz_default_plugins/PointStamped
@@ -115,21 +116,6 @@ Visualization Manager:
       Topic: /blue_object_detector/detected_point
       Unreliable: true
       Value: true
-
-    # ── Annotated colour image (corner overlay) ──────────────────────────
-    - Class: rviz_default_plugins/Camera
-      Enabled: true
-      Far Plane Distance: 100
-      Image Rendering: background and overlay
-      Image Topic: /blue_object_detector/debug_image
-      Name: Debug Camera
-      Near Plane Distance: 0.009999999776482582
-      Overlay Alpha: 0.5
-      Queue Size: 2
-      Transport Hint: raw
-      Unreliable: true
-      Value: true
-      Zoom Factor: 1.0
 
   Enabled: true
   Global Options:
@@ -178,20 +164,17 @@ Visualization Manager:
       Yaw: 0.785398185253
     Saved: ~
 Window Geometry:
-  Debug Camera:
-    collapsed: false
   Displays:
     collapsed: false
   Height: 900
   Hide Left Dock: false
   Hide Right Dock: false
-  QMainWindow State: 000000ff00000000fd0000000400000000000001f4000003a5fc0200000008fb000000100044006900730070006c006100790073010000002800000162000000c000fffffffb0000000a005600690065007700000001c3000000a4000000a400ffffff00000001000000c0000003a5fc0200000001fb0000000c00430061006d006500720061000000000000003a5000000000000000000000023c000003a500000004000000040000000800000008fc00000000
   Selection:
     collapsed: false
   Time:
     collapsed: false
   Views:
     collapsed: false
-  Width: 1600
+  Width: 1280
   X: 0
   Y: 0

@@ -50,6 +50,7 @@ services:
     environment:
       - DISPLAY=${DISPLAY}
       - QT_X11_NO_MITSHM=1
+      - QT_QPA_PLATFORM=xcb
       - LIBGL_ALWAYS_SOFTWARE=1
       - MESA_GL_VERSION_OVERRIDE=3.3
       - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
@@ -71,4 +72,4 @@ services:
         hardware_type:=real
         usb_port:=/dev/ttyACM0
         joint_config_file:=/calibration/papu.json
-        use_rviz:=true
+        start_rviz:=true

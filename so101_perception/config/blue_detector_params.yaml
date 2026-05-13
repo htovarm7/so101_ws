@@ -7,6 +7,12 @@
 blue_object_detector:
   ros__parameters:
 
+    # ── Output frame ─────────────────────────────────────────────────────────
+    # Transform detections into this frame before publishing.
+    # Use the robot base frame so RViz never needs to do a TF lookup on the
+    # stamped messages (avoids "queue is full" / "discarding message" warnings).
+    target_frame: "base_link"
+
     # ── Input topics ──────────────────────────────────────────────────────────
     color_image_topic: "/camera/camera/color/image_raw"
     depth_image_topic: "/camera/camera/aligned_depth_to_color/image_raw"
