@@ -9,16 +9,6 @@ ROS 2 Jazzy workspace for the **SO-101** robot arm. Provides motion planning wit
 - **For arm services:** USB Feetech arm at `/dev/ttyACM0` and a LeRobot calibration file
 - **For perception services:** RealSense D435 plugged in via USB
 
-### Calibration file
-
-The `moveit` and `perception` services expect a calibration file at:
-
-```
-~/.cache/huggingface/lerobot/calibration/robots/so_follower/papu_ros2.json
-```
-
-This must be in the feetech_ros2_driver wrapped format (a `joints:` map around the LeRobot flat JSON). Run the LeRobot motor setup and calibration steps for your arm first.
-
 ---
 
 ## Quick start
