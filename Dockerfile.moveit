@@ -31,6 +31,17 @@ RUN apt-get update && apt-get install -y \
     libserial-dev \
     && rm -rf /var/lib/apt/lists/*
 
+# Perception deps — RealSense driver, OpenCV bridge, image transport, message filters
+RUN apt-get update && apt-get install -y \
+    ros-jazzy-realsense2-camera \
+    ros-jazzy-realsense2-description \
+    ros-jazzy-cv-bridge \
+    ros-jazzy-image-transport \
+    ros-jazzy-vision-opencv \
+    ros-jazzy-message-filters \
+    python3-opencv \
+    && rm -rf /var/lib/apt/lists/*
+
 # tl_expected is header-only and not in apt — install from source
 RUN git clone --depth 1 https://github.com/TartanLlama/expected.git /tmp/expected \
     && cmake -S /tmp/expected -B /tmp/expected/build -DEXPECTED_BUILD_TESTS=OFF \
@@ -55,6 +66,7 @@ RUN source /opt/ros/jazzy/setup.bash && \
         so101_kinematics_msgs \
         so101_moveit_config \
         so101_bringup \
+        so101_perception \
         feetech_ros2_driver \
       --cmake-args -DCMAKE_BUILD_TYPE=Release \
     && rm -rf build log

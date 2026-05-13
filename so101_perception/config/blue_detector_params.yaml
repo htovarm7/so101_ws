@@ -1,0 +1,40 @@
+# Parameters for so101_perception/blue_object_detector node
+#
+# Topics must match what the realsense2_camera driver publishes.
+# Default namespace for the driver is /camera/camera (node name "camera"
+# inside namespace "camera"), hence the /camera/camera/... prefix.
+
+blue_object_detector:
+  ros__parameters:
+
+    # ── Input topics ──────────────────────────────────────────────────────────
+    color_image_topic: "/camera/camera/color/image_raw"
+    depth_image_topic: "/camera/camera/aligned_depth_to_color/image_raw"
+    camera_info_topic: "/camera/camera/color/camera_info"
+
+    # ── Blue HSV thresholds ───────────────────────────────────────────────────
+    # OpenCV convention: H ∈ [0, 179],  S/V ∈ [0, 255]
+    #
+    # These values target "standard" blue objects under typical indoor lighting.
+    # Increase S_lower if you get false positives from white/grey areas.
+    # Adjust H range if your object is more cyan (H≈90) or violet (H≈140).
+    #
+    #           H    S    V
+    hsv_lower: [100, 80,  50]   # lower bound (inclusive)
+    hsv_upper: [130, 255, 255]  # upper bound (inclusive)
+
+    # ── Detection quality ─────────────────────────────────────────────────────
+    # Minimum contour area in pixels.  Raise to ignore small noise blobs.
+    min_contour_area: 500
+
+    # ── Depth ─────────────────────────────────────────────────────────────────
+    # RealSense uint16 depth is in millimetres → multiply by 0.001 for metres.
+    depth_scale: 0.001
+
+    # Detections beyond this distance (metres) are discarded.
+    max_depth_m: 3.0
+
+    # ── Visualisation ─────────────────────────────────────────────────────────
+    # How long (seconds) the RViz sphere marker is displayed before fading.
+    # Set to 0.0 to keep it until the next update.
+    marker_lifetime_s: 0.3

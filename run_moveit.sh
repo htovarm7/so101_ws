@@ -17,15 +17,20 @@ case "${1:-run}" in
     echo "Starting MoveIt + RViz (mock hardware)..."
     docker compose -f docker-compose.moveit.yml up
     ;;
+  perception)
+    echo "Starting blue-object detector + RViz (RealSense D435)..."
+    docker compose -f docker-compose.moveit.yml run --rm perception
+    ;;
   shell)
     echo "Opening shell inside the MoveIt container..."
     docker compose -f docker-compose.moveit.yml run --rm moveit bash
     ;;
   *)
-    echo "Usage: $0 [build|run|shell]"
-    echo "  build  — build the Docker image"
-    echo "  run    — launch MoveIt + RViz (default)"
-    echo "  shell  — open an interactive shell inside the container"
+    echo "Usage: $0 [build|run|perception|shell]"
+    echo "  build       — build the Docker image"
+    echo "  run         — launch MoveIt + RViz (default)"
+    echo "  perception  — launch blue-object detector + RViz (RealSense D435)"
+    echo "  shell       — open an interactive shell inside the container"
     exit 1
     ;;
 esac

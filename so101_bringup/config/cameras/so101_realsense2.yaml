@@ -1,0 +1,18 @@
+# Minimal realsense2_camera parameters used when the D435 is launched via
+# so101_bringup/cameras.launch.py.  For the dedicated perception stack
+# (with aligned depth + blue detector) use so101_perception instead.
+
+/**:
+  ros__parameters:
+    enable_color:  true
+    enable_depth:  true
+    color_width:   640
+    color_height:  480
+    color_fps:     30
+    depth_width:   640
+    depth_height:  480
+    depth_fps:     30
+    align_depth.enable: true
+    publish_tf:    true
+    tf_publish_rate: 0.0
+    pointcloud.enable: false
