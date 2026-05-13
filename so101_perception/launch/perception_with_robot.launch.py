@@ -75,30 +75,10 @@ def generate_launch_description():
         emulate_tty=True,
     )
 
-    # ── 3. Static TF: gripper link → RealSense body ────────────────────────────
-    # Parent : moving_jaw_so101_v1_link  (gripper, no namespace prefix)
-    # Child  : camera_link               (RealSense base frame from driver)
-    #
-    # Positional format: x y z yaw pitch roll frame_id child_frame_id
-    # Values from so101_cameras.xacro wrist-camera defaults:
-    #   xyz = 0 0 -0.02   rpy = -1.5708 0 -1.5708  →  yaw=-1.5708 pitch=0 roll=-1.5708
-    #
-    # NOTE: named-flag style (--roll/--pitch/--yaw) is NOT supported in
-    # tf2_ros Jazzy; use the positional format instead.
-    # To adjust for your physical mount, change the values below and rebuild.
-    camera_tf = Node(
-        package="tf2_ros",
-        executable="static_transform_publisher",
-        name="wrist_cam_to_camera_link_tf",
-        arguments=[
-            "0", "0", "-0.02",          # x y z  (metres)
-            "-1.5708", "0", "-1.5708",  # yaw pitch roll  (radians)
-            "moving_jaw_so101_v1_link",
-            "camera_link",
-        ],
-        output="screen",
-    )
-
+    # ── 3. Blue-object detector ───────────────────────────────────────────────
+    # The detector node itself broadcasts the static TF bridge
+    # (moving_jaw_so101_v1_link → camera_color_optical_frame) via
+    # StaticTransformBroadcaster once CameraInfo is received.
     # ── 4. Blue-object detector ────────────────────────────────────────────────
     detector_node = Node(
         package="so101_perception",
@@ -129,7 +109,6 @@ def generate_launch_description():
         DeclareLaunchArgument("detector_params",   default_value=default_det_params),
         robot_launch,
         realsense_node,
-        camera_tf,
         detector_node,
         rviz_node,
     ])
