@@ -1,0 +1,197 @@
+Panels:
+  - Class: rviz_common/Displays
+    Help Height: 78
+    Name: Displays
+    Property Tree Widget:
+      Expanded:
+        - /Global Options1
+        - /RobotModel1
+        - /TF1
+        - /BlueObject Marker1
+        - /BlueObject Point1
+        - /Debug Camera1
+      Splitter Ratio: 0.5
+    Tree Height: 750
+  - Class: rviz_common/Selection
+    Name: Selection
+  - Class: rviz_common/Views
+    Expanded:
+      - /Current View1
+    Name: Views
+    Splitter Ratio: 0.5
+  - Class: rviz_common/Time
+    Experimental: false
+    Name: Time
+    SyncMode: 0
+    SyncSource: ""
+Visualization Manager:
+  Class: ""
+  Displays:
+
+    # ── Scene grid ──────────────────────────────────────────────────────────
+    - Alpha: 0.5
+      Cell Size: 0.1
+      Class: rviz_default_plugins/Grid
+      Color: 160; 160; 164
+      Enabled: true
+      Line Style:
+        Line Width: 0.029999999329447746
+        Value: Lines
+      Name: Grid
+      Normal Cell Count: 0
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0
+      Plane: XY
+      Plane Cell Count: 20
+      Reference Frame: <Fixed Frame>
+      Value: true
+
+    # ── Robot model ──────────────────────────────────────────────────────────
+    - Alpha: 1
+      Class: rviz_default_plugins/RobotModel
+      Collision Enabled: false
+      Description Source: Topic
+      Description Topic: /follower/robot_description
+      Enabled: true
+      Links:
+        All Links Enabled: true
+        Expand Joint Details: false
+        Expand Link Details: false
+        Expand Tree: false
+        Link Tree Style: Links in Alphabetic Order
+      Name: RobotModel
+      TF Prefix: ""
+      Update Interval: 0
+      Value: true
+      Visual Enabled: true
+
+    # ── TF tree (shows camera_link attached to gripper in real-time) ─────────
+    - Class: rviz_default_plugins/TF
+      Enabled: true
+      Frame Timeout: 15
+      Frames:
+        All Enabled: false
+        base_link:
+          Value: true
+        moving_jaw_so101_v1_link:
+          Value: true
+        camera_link:
+          Value: true
+        camera_color_optical_frame:
+          Value: true
+      Marker Scale: 0.1
+      Name: TF
+      Show Arrows: false
+      Show Axes: true
+      Show Names: true
+      Tree:
+        {}
+      Update Interval: 0
+      Value: true
+
+    # ── Blue sphere at detected object position ────────────────────────────
+    - Class: rviz_default_plugins/Marker
+      Enabled: true
+      Name: BlueObject Marker
+      Namespaces:
+        blue_object: true
+      Queue Size: 10
+      Topic: /blue_object_detector/marker
+      Unreliable: true
+      Value: true
+
+    # ── PointStamped trail (last 30 detections) ──────────────────────────
+    - Axes Length: 0.05
+      Axes Radius: 0.005
+      Class: rviz_default_plugins/PointStamped
+      Color: 0; 100; 255
+      Enabled: true
+      History Length: 30
+      Name: BlueObject Point
+      Queue Size: 10
+      Radius: 0.02
+      Topic: /blue_object_detector/detected_point
+      Unreliable: true
+      Value: true
+
+    # ── Annotated colour image (corner overlay) ──────────────────────────
+    - Class: rviz_default_plugins/Camera
+      Enabled: true
+      Far Plane Distance: 100
+      Image Rendering: background and overlay
+      Image Topic: /blue_object_detector/debug_image
+      Name: Debug Camera
+      Near Plane Distance: 0.009999999776482582
+      Overlay Alpha: 0.5
+      Queue Size: 2
+      Transport Hint: raw
+      Unreliable: true
+      Value: true
+      Zoom Factor: 1.0
+
+  Enabled: true
+  Global Options:
+    Background Color: 48; 48; 48
+    Fixed Frame: base_link
+    Frame Rate: 30
+  Name: root
+  Tools:
+    - Class: rviz_default_plugins/Interact
+      Hide Inactive Icons: false
+    - Class: rviz_default_plugins/MoveCamera
+    - Class: rviz_default_plugins/Select
+    - Class: rviz_default_plugins/FocusCamera
+    - Class: rviz_default_plugins/Measure
+      Line color: 128; 128; 0
+    - Class: rviz_default_plugins/PublishPoint
+      Single click: true
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /clicked_point
+  Value: true
+  Views:
+    Current:
+      Class: rviz_default_plugins/Orbit
+      Distance: 1.2
+      Enable Stereo Rendering:
+        Stereo Eye Separation: 0.05999999865889549
+        Stereo Focal Distance: 1
+        Swap Stereo Eyes: false
+        Value: false
+      Focal Point:
+        X: 0.0
+        Y: 0.0
+        Z: 0.25
+      Focal Shape Fixed Size: true
+      Focal Shape Size: 0.05000000074505806
+      Invert Z Axis: false
+      Name: Current View
+      Near Clip Distance: 0.009999999776482582
+      Pitch: 0.5
+      Target Frame: base_link
+      Value: Orbit (rviz)
+      Yaw: 0.785398185253
+    Saved: ~
+Window Geometry:
+  Debug Camera:
+    collapsed: false
+  Displays:
+    collapsed: false
+  Height: 900
+  Hide Left Dock: false
+  Hide Right Dock: false
+  QMainWindow State: 000000ff00000000fd0000000400000000000001f4000003a5fc0200000008fb000000100044006900730070006c006100790073010000002800000162000000c000fffffffb0000000a005600690065007700000001c3000000a4000000a400ffffff00000001000000c0000003a5fc0200000001fb0000000c00430061006d006500720061000000000000003a5000000000000000000000023c000003a500000004000000040000000800000008fc00000000
+  Selection:
+    collapsed: false
+  Time:
+    collapsed: false
+  Views:
+    collapsed: false
+  Width: 1600
+  X: 0
+  Y: 0

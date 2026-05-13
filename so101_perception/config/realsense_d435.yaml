@@ -1,0 +1,69 @@
+# RealSense D435 parameters for realsense2_camera ROS2 driver
+# Enables colour + depth streams and aligns depth to colour.
+#
+# Full parameter reference:
+#   https://github.com/IntelRealSense/realsense-ros/blob/ros2-development/realsense2_camera/config/default_parameters.yaml
+
+/**:
+  ros__parameters:
+
+    # ── Serial / device selection ─────────────────────────────────────────────
+    # Leave empty to use the first connected D435.
+    serial_no: ""
+    usb_port_id: ""
+    device_type: "d4.5"   # matches D435 / D435i
+
+    # ── Stream enable flags ───────────────────────────────────────────────────
+    enable_color: true
+    enable_depth: true
+    enable_infra1: false
+    enable_infra2: false
+    enable_accel: false
+    enable_gyro: false
+
+    # ── Colour stream ─────────────────────────────────────────────────────────
+    color_width: 640
+    color_height: 480
+    color_fps: 30
+    color_format: "BGR8"
+
+    # ── Depth stream ──────────────────────────────────────────────────────────
+    depth_width: 640
+    depth_height: 480
+    depth_fps: 30
+
+    # Align depth to colour frame so pixels correspond 1-to-1
+    align_depth.enable: true
+
+    # ── Post-processing filters (improves depth quality) ─────────────────────
+    # Decimation  – reduce noise at the cost of resolution
+    filters: "decimation,spatial,temporal,hole_filling"
+
+    decimation_filter.filter_magnitude: 1        # 1 = disabled (full res)
+
+    spatial_filter.filter_magnitude:      2
+    spatial_filter.filter_smooth_alpha:   0.5
+    spatial_filter.filter_smooth_delta:   20
+    spatial_filter.holes_fill:            0
+
+    temporal_filter.filter_smooth_alpha:  0.4
+    temporal_filter.filter_smooth_delta:  20
+    temporal_filter.holes_fill:           3
+
+    hole_filling_filter.holes_fill:       1
+
+    # ── TF / frame IDs ────────────────────────────────────────────────────────
+    # base_frame_id is the physical camera body; optical frames are rotated.
+    base_frame_id:              "camera_link"
+    depth_frame_id:             "camera_depth_frame"
+    color_frame_id:             "camera_color_frame"
+    color_optical_frame_id:     "camera_color_optical_frame"
+    depth_optical_frame_id:     "camera_depth_optical_frame"
+    aligned_depth_to_color_frame_id: "camera_color_optical_frame"
+
+    # ── Misc ──────────────────────────────────────────────────────────────────
+    publish_tf:              true
+    tf_publish_rate:         0.0   # 0 = static TF only
+    diagnostics_period:      0.0
+    pointcloud.enable:       false  # disable PCL to save bandwidth (enable if needed)
+    pointcloud.stream_filter: 2     # colour texture when enabled
