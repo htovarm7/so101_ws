@@ -17,7 +17,7 @@ services:
       - SO101_URDF_FILE=/ros2_ws/so101_follower_real.urdf
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
-      - ${HOME}/.cache/huggingface/lerobot/calibration/robots/so_follower/papu_ros2.json:/calibration/papu.json:ro
+      - ./papu_ros2.json:/calibration/papu.json:ro
     devices:
       - /dev/ttyACM0:/dev/ttyACM0
     group_add:
@@ -49,7 +49,7 @@ services:
       - SO101_URDF_FILE=/ros2_ws/so101_follower_real.urdf
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
-      - ${HOME}/.cache/huggingface/lerobot/calibration/robots/so_follower/papu_ros2.json:/calibration/papu.json:ro
+      - ./papu_ros2.json:/calibration/papu.json:ro
     devices:
       - /dev/ttyACM0:/dev/ttyACM0
     group_add:
@@ -104,7 +104,7 @@ services:
       - SO101_URDF_FILE=/ros2_ws/so101_follower_real.urdf
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
-      - ${HOME}/.cache/huggingface/lerobot/calibration/robots/so_follower/papu_ros2.json:/calibration/papu.json:ro
+      - ./papu_ros2.json:/calibration/papu.json:ro
     devices:
       - /dev/ttyACM0:/dev/ttyACM0
     group_add:
