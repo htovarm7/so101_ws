@@ -1,0 +1,82 @@
+# Parameters for so101_perception/object_classifier node.
+#
+# This file is written automatically by the `hsv_calibrator` node when you
+# press 'w' in its GUI, but the seed values below are good starting points
+# for the two objects we have so far (red heart-bear plush and blue plush).
+# The remaining four slots are placeholders disabled with `enabled: false`;
+# calibrate them live and overwrite this file.
+#
+# OpenCV convention: H in [0, 179], S/V in [0, 255].
+# If hsv_lower[0] > hsv_upper[0] the H range wraps around 0/180 — useful for
+# reds, which sit at both ends of the hue circle.
+
+object_classifier:
+  ros__parameters:
+
+    # ── TF bridge (copied from blue_detector_params.yaml) ─────────────────────
+    parent_link: "moving_jaw_so101_v1_link"
+    mount_x:   0.0
+    mount_y:   0.0
+    mount_z:  -0.02
+    mount_qx: -0.5
+    mount_qy:  0.5
+    mount_qz: -0.5
+    mount_qw: -0.5
+
+    target_frame: "base_link"
+
+    # ── Input topics ──────────────────────────────────────────────────────────
+    color_image_topic: "/camera/camera/color/image_raw"
+    depth_image_topic: "/camera/camera/aligned_depth_to_color/image_raw"
+    camera_info_topic: "/camera/camera/color/camera_info"
+
+    # ── Depth / detection quality ─────────────────────────────────────────────
+    depth_scale: 0.001
+    max_depth_m: 3.0
+    marker_lifetime_s: 1.0
+
+    # Published when no enabled class produces a contour above its min area.
+    none_label: "none"
+
+    # ── Per-class HSV ranges ──────────────────────────────────────────────────
+    # The detection node iterates over this list and picks the class whose
+    # mask produces the largest contour above its min_contour_area.  Set
+    # `enabled: false` to skip a slot without removing it.
+    classes:
+      - label: "red_heart_bear"
+        enabled: true
+        # Red wraps around 0/180 in HSV — using H_lower > H_upper triggers
+        # the wrap-around path in the detector.
+        hsv_lower: [170, 120, 70]
+        hsv_upper: [10,  255, 255]
+        min_contour_area: 500
+
+      - label: "blue_dragon"
+        enabled: true
+        hsv_lower: [85,  80, 60]
+        hsv_upper: [115, 255, 255]
+        min_contour_area: 500
+
+      - label: "cereal_box"
+        enabled: false
+        hsv_lower: [0, 0, 0]
+        hsv_upper: [179, 255, 255]
+        min_contour_area: 500
+
+      - label: "object_4"
+        enabled: false
+        hsv_lower: [0, 0, 0]
+        hsv_upper: [179, 255, 255]
+        min_contour_area: 500
+
+      - label: "object_5"
+        enabled: false
+        hsv_lower: [0, 0, 0]
+        hsv_upper: [179, 255, 255]
+        min_contour_area: 500
+
+      - label: "object_6"
+        enabled: false
+        hsv_lower: [0, 0, 0]
+        hsv_upper: [179, 255, 255]
+        min_contour_area: 500
