@@ -31,6 +31,8 @@ def _setup(context):
     usb_port          = LaunchConfiguration("usb_port").perform(context)
     joint_config_file = LaunchConfiguration("joint_config_file").perform(context)
     use_rviz          = LaunchConfiguration("use_rviz").perform(context)
+    use_cameras       = LaunchConfiguration("use_cameras").perform(context)
+    use_perception    = LaunchConfiguration("use_perception").perform(context)
 
     pkg_bringup    = get_package_share_directory("so101_bringup")
     pkg_perception = get_package_share_directory("so101_perception")
@@ -49,34 +51,36 @@ def _setup(context):
             "namespace": namespace,
             "usb_port": usb_port,
             "joint_config_file": joint_config_file,
-            "use_cameras": "true",
+            "use_cameras": use_cameras,
             "cameras_config_file": cameras_cfg,
             "use_rviz": use_rviz,
         }.items(),
     )
 
-    # ── Perception ──────────────────────────────────────────────────────────
+    # ── Perception (skippable for hardware-free testing) ────────────────────
     objects_hsv = os.path.join(pkg_perception, "config", "objects_hsv.yaml")
     zones_hsv   = os.path.join(pkg_perception, "config", "zones_hsv.yaml")
 
-    object_classifier = Node(
-        package="so101_perception",
-        executable="object_classifier",
-        name="object_classifier",
-        parameters=[objects_hsv],
-        output="screen",
-        emulate_tty=True,
-    )
-    # Don't re-broadcast the gripper->camera TF — object_classifier already
-    # does, and duplicate static TFs spam the log.
-    zone_detector = Node(
-        package="so101_perception",
-        executable="zone_detector",
-        name="zone_detector",
-        parameters=[zones_hsv, {"publish_camera_tf": False}],
-        output="screen",
-        emulate_tty=True,
-    )
+    perception_nodes = []
+    if use_perception.lower() == "true":
+        perception_nodes.append(Node(
+            package="so101_perception",
+            executable="object_classifier",
+            name="object_classifier",
+            parameters=[objects_hsv],
+            output="screen",
+            emulate_tty=True,
+        ))
+        # Don't re-broadcast the gripper->camera TF — object_classifier already
+        # does, and duplicate static TFs spam the log.
+        perception_nodes.append(Node(
+            package="so101_perception",
+            executable="zone_detector",
+            name="zone_detector",
+            parameters=[zones_hsv, {"publish_camera_tf": False}],
+            output="screen",
+            emulate_tty=True,
+        ))
 
     # ── Pick-and-place node ─────────────────────────────────────────────────
     # MoveItPy needs the full MoveIt config dict as parameters.  Re-build it
@@ -115,7 +119,7 @@ def _setup(context):
         parameters=[moveit_config.to_dict(), pick_place_cfg],
     )
 
-    return [follower_moveit_demo, object_classifier, zone_detector, pick_place_node]
+    return [follower_moveit_demo, *perception_nodes, pick_place_node]
 
 
 def generate_launch_description():
@@ -126,6 +130,15 @@ def generate_launch_description():
             DeclareLaunchArgument("usb_port", default_value="/dev/ttyACM0"),
             DeclareLaunchArgument("joint_config_file", default_value=""),
             DeclareLaunchArgument("use_rviz", default_value="true"),
+            DeclareLaunchArgument(
+                "use_cameras", default_value="true",
+                description="Launch the RealSense D435 driver (false for testing without camera).",
+            ),
+            DeclareLaunchArgument(
+                "use_perception", default_value="true",
+                description="Launch object_classifier + zone_detector "
+                "(false to mock detections via ros2 topic pub).",
+            ),
             OpaqueFunction(function=_setup),
         ]
     )

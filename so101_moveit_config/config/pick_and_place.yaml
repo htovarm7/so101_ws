@@ -17,11 +17,12 @@ sort_by_class:
     zone_b_topic:       "/zone_detector/zone_b"
 
     # ── Class → zone mapping ──────────────────────────────────────────────
-    # Edit freely as new objects are calibrated.  Any label not listed here
-    # is skipped.
+    # ROS 2 parameters can't be dicts, so this is a flat list of
+    # "label:zone" strings.  Edit freely as new objects are calibrated.
+    # Any label not listed here is skipped.
     class_to_zone:
-      red_heart_bear: "zone_a"
-      blue_dragon:    "zone_b"
+      - "red_heart_bear:zone_a"
+      - "blue_dragon:zone_b"
 
     # ── Stability gates ───────────────────────────────────────────────────
     object_samples_required: 10
@@ -40,10 +41,16 @@ sort_by_class:
     # ── Pick geometry (relative to the object centroid) ───────────────────
     pick_z_offset_m:    0.0    # add to centroid Z when commanding the pick pose
     approach_height_m:  0.05   # how far above the pick pose to approach from
-    retreat_height_m:   0.08   # how far to rise after grasping
+    # Match approach_height so the LIN retreat ends exactly where the approach
+    # started — that pose is already IK-validated.  Raising it further can
+    # cross an IK singularity on the 5-DOF SO-101.
+    retreat_height_m:   0.05
 
     # ── Place geometry (relative to the zone centroid) ────────────────────
     # Drop the object slightly above the sheet to avoid plowing.
-    place_z_offset_m:   0.04
-    place_approach_height_m: 0.08
-    place_retreat_height_m:  0.08
+    # Same logic as pick: keep approach = retreat AND keep the absolute Z low
+    # — Z ~0.08 in base_link is comfortably inside the SO-101 workspace,
+    # whereas Z ~0.11 hits an IK singularity for off-axis yaws.
+    place_z_offset_m:   0.03
+    place_approach_height_m: 0.03
+    place_retreat_height_m:  0.03

@@ -36,16 +36,15 @@
         <joint name="wrist_flex" value="0.75"/>
         <joint name="wrist_roll" value="0"/>
     </group_state>
-    <!-- Observation pose: the arm points forward and slightly down so the
-         wrist-mounted RealSense can see the objects and both drop-off zones.
-         These joint values are a placeholder — tune them live in RViz
-         (MotionPlanning panel → "Joints" tab) once the workspace layout is
-         fixed, then copy the values back here. -->
+    <!-- Observation pose: the arm tilts forward so the wrist-mounted
+         RealSense looks down at the workspace.  Tuned live in RViz:
+         shoulder_pan 0°, shoulder_lift -63°, elbow_flex 10°,
+         wrist_flex 78°, wrist_roll 0°. -->
     <group_state name="scan_pose" group="manipulator">
-        <joint name="elbow_flex" value="1.2"/>
-        <joint name="shoulder_lift" value="-0.8"/>
+        <joint name="elbow_flex" value="0.1745"/>
+        <joint name="shoulder_lift" value="-1.0996"/>
         <joint name="shoulder_pan" value="0"/>
-        <joint name="wrist_flex" value="0.5"/>
+        <joint name="wrist_flex" value="1.3614"/>
         <joint name="wrist_roll" value="0"/>
     </group_state>
     <group_state name="extended" group="manipulator">
