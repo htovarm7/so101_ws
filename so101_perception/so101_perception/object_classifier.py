@@ -64,11 +64,11 @@ class ObjectClassifier(Node):
         super().__init__("object_classifier")
 
         self.declare_parameter("color_image_topic",
-                               "/camera/camera/color/image_raw")
+                               "/camera/cam_static/color/image_raw")
         self.declare_parameter("depth_image_topic",
-                               "/camera/camera/aligned_depth_to_color/image_raw")
+                               "/camera/cam_static/aligned_depth_to_color/image_raw")
         self.declare_parameter("camera_info_topic",
-                               "/camera/camera/color/camera_info")
+                               "/camera/cam_static/color/camera_info")
 
         self.declare_parameter("target_frame", "base_link")
         self.declare_parameter("parent_link",  "moving_jaw_so101_v1_link")

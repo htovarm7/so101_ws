@@ -67,7 +67,7 @@ def _setup(context):
             package="so101_perception",
             executable="object_classifier",
             name="object_classifier",
-            parameters=[objects_hsv],
+            parameters=[{"config_file": objects_hsv}],
             output="screen",
             emulate_tty=True,
         ))
