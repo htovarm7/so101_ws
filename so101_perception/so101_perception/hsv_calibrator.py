@@ -4,12 +4,22 @@ Subscribes to the RealSense colour stream and opens an OpenCV GUI with six
 HSV trackbars plus a "class" selector.  Point the camera at one object at a
 time, tune the sliders until the mask cleanly isolates that object, then
 press ``s`` to save its HSV range into the selected class slot.  When all
-six classes are captured, press ``w`` to write the
-resulting parameters to ``objects_hsv.yaml``.
+six classes are captured, press ``w`` to write the resulting parameters to
+``objects_hsv.yaml``.
+
+Threading note
+--------------
+The OpenCV GUI loop calls ``cv2.waitKey(1)`` every tick, which blocks for
+~1–30ms.  If the image subscription and the GUI timer share a single
+executor thread, that block starves the image callback and the window
+never receives a frame — you stay stuck on "Waiting for image…".
+
+Fix: a MultiThreadedExecutor (in ``main``) plus two MutuallyExclusive
+callback groups (one for the image subscription, one for the GUI timer)
+so they can run in parallel.
 """
 
 import os
-import sys
 from datetime import datetime
 from typing import Dict, List, Optional
 
@@ -20,6 +30,8 @@ import yaml
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
+from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
+from rclpy.executors import MultiThreadedExecutor
 
 from cv_bridge import CvBridge
 from sensor_msgs.msg import Image
@@ -44,9 +56,9 @@ class HSVCalibrator(Node):
             "color_image_topic", "/camera/camera/color/image_raw"
         )
         self.declare_parameter("class_labels", DEFAULT_LABELS)
-        self.declare_parameter("output_path", "")          
+        self.declare_parameter("output_path", "")
         self.declare_parameter("min_contour_area", 500)
-        self.declare_parameter("window_width", 640)        
+        self.declare_parameter("window_width", 640)
 
         color_topic: str = self.get_parameter("color_image_topic").value
         labels = list(self.get_parameter("class_labels").value)
@@ -62,26 +74,36 @@ class HSVCalibrator(Node):
         out_param: str = self.get_parameter("output_path").value
         self._output_path: str = out_param if out_param else self._default_output_path()
 
-        # State
+        # ── State ─────────────────────────────────────────────────────────────
         self._captured: List[Optional[Dict[str, List[int]]]] = [None] * 6
         self._bridge = CvBridge()
         self._latest_bgr: Optional[np.ndarray] = None
 
-        # Subscriptions
+        # ── Callback groups ───────────────────────────────────────────────────
+        # Image callback and GUI timer go in SEPARATE groups so the
+        # MultiThreadedExecutor can run them in parallel.  Without this the
+        # GUI's blocking cv2.waitKey() prevents image messages from being
+        # delivered, and the window stays on "Waiting for image…".
+        self._cb_image = MutuallyExclusiveCallbackGroup()
+        self._cb_gui   = MutuallyExclusiveCallbackGroup()
+
+        # ── Subscriptions ─────────────────────────────────────────────────────
         sensor_qos = QoSProfile(
             reliability=ReliabilityPolicy.BEST_EFFORT,
             history=HistoryPolicy.KEEP_LAST,
             depth=1,
         )
-        self.create_subscription(Image, color_topic, self._image_cb, sensor_qos)
+        self.create_subscription(
+            Image, color_topic, self._image_cb, sensor_qos,
+            callback_group=self._cb_image,
+        )
 
-        # OpenCV window setup
+        # ── OpenCV window setup ───────────────────────────────────────────────
         self._win_main = "HSV Calibrator (image)"
         self._win_mask = "HSV Calibrator (mask)"
         cv2.namedWindow(self._win_main, cv2.WINDOW_NORMAL)
         cv2.namedWindow(self._win_mask, cv2.WINDOW_NORMAL)
 
-        # Trackbars live on the main window.
         cv2.createTrackbar("class",  self._win_main, 0, 5,   self._noop)
         cv2.createTrackbar("H min",  self._win_main, 0, 179, self._noop)
         cv2.createTrackbar("H max",  self._win_main, 179, 179, self._noop)
@@ -90,7 +112,9 @@ class HSVCalibrator(Node):
         cv2.createTrackbar("V min",  self._win_main, 50, 255, self._noop)
         cv2.createTrackbar("V max",  self._win_main, 255, 255, self._noop)
 
-        self.create_timer(1.0 / 30.0, self._gui_tick)
+        # GUI tick runs on its own callback group so it can spin in parallel
+        # with the image subscription.
+        self.create_timer(1.0 / 30.0, self._gui_tick, callback_group=self._cb_gui)
 
         self.get_logger().info(
             "HSV Calibrator ready\n"
@@ -100,11 +124,11 @@ class HSVCalibrator(Node):
             "  Keys: [s]ave  [r]eset  [w]rite YAML  [n]ext  [p]rev  [q]uit"
         )
 
-    # Helpers
+    # ── Helpers ───────────────────────────────────────────────────────────────
 
     @staticmethod
     def _noop(_value: int) -> None:
-        """OpenCV trackbar callback that does nothing"""
+        """OpenCV trackbar callback that does nothing — we poll values in the loop."""
         return None
 
     def _default_output_path(self) -> str:
@@ -116,14 +140,16 @@ class HSVCalibrator(Node):
         except Exception:
             return os.path.abspath("objects_hsv.yaml")
 
-    # ROS callbacks
+    # ── ROS callbacks ─────────────────────────────────────────────────────────
+
     def _image_cb(self, msg: Image) -> None:
         try:
             self._latest_bgr = self._bridge.imgmsg_to_cv2(msg, desired_encoding="bgr8")
         except Exception as e:  # noqa: BLE001
             self.get_logger().error(f"cv_bridge conversion failed: {e}")
 
-    # GUI loop
+    # ── GUI loop ──────────────────────────────────────────────────────────────
+
     def _read_trackbars(self):
         cid    = cv2.getTrackbarPos("class", self._win_main)
         h_lo   = cv2.getTrackbarPos("H min", self._win_main)
@@ -135,8 +161,7 @@ class HSVCalibrator(Node):
         return cid, (h_lo, s_lo, v_lo), (h_hi, s_hi, v_hi)
 
     def _compute_mask(self, hsv: np.ndarray, lo, hi) -> np.ndarray:
-        """Compute an HSV mask, supporting wrap-around in the H channel.
-        """
+        """Compute an HSV mask, supporting wrap-around in the H channel."""
         h_lo, s_lo, v_lo = lo
         h_hi, s_hi, v_hi = hi
         if h_lo <= h_hi:
@@ -218,7 +243,8 @@ class HSVCalibrator(Node):
             return
         self._handle_key(key, cid, lo, hi)
 
-    # Key handling
+    # ── Key handling ──────────────────────────────────────────────────────────
+
     def _handle_key(self, key: int, cid: int, lo, hi) -> None:
         ch = chr(key).lower() if key < 128 else ""
         if ch == "s":
@@ -247,10 +273,9 @@ class HSVCalibrator(Node):
             self.get_logger().info("Quit requested. Shutting down.")
             rclpy.shutdown()
 
-    # YAML output
+    # ── YAML output ───────────────────────────────────────────────────────────
 
     def _write_yaml(self) -> None:
-        # Build a list of all six classes
         classes_out = []
         for i, entry in enumerate(self._captured):
             if entry is None:
@@ -294,8 +319,6 @@ class HSVCalibrator(Node):
 def main(args=None) -> None:
     rclpy.init(args=args)
     node = HSVCalibrator()
-    
-    from rclpy.executors import MultiThreadedExecutor
     executor = MultiThreadedExecutor(num_threads=2)
     executor.add_node(node)
     try:
@@ -311,6 +334,7 @@ def main(args=None) -> None:
             pass
         if rclpy.ok():
             rclpy.shutdown()
+
 
 if __name__ == "__main__":
     main()
