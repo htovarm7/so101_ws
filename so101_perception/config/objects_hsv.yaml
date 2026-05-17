@@ -44,8 +44,8 @@ object_classifier:
     # `enabled: false` to skip a slot without removing it.
     classes:
     - label: red_heart_bear
-      hsv_lower: [0, 104, 0]
-      hsv_upper: [179, 255, 120]
+      hsv_lower: [147, 117, 26]
+      hsv_upper: [9, 255, 138]
       min_contour_area: 500
       enabled: true
     - label: blue_dragon
