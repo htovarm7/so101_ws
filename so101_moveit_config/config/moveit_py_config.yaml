@@ -37,6 +37,9 @@ pilz_lin:
     planning_attempts: 1
     planning_pipeline: pilz_industrial_motion_planner
     planner_id: "LIN"
-    max_velocity_scaling_factor: 1.0
-    max_acceleration_scaling_factor: 1.0
+    # Conservative scaling — at 1.0 we hit joint deceleration limits on
+    # wrist_flex during short Cartesian descents (Pilz computes one
+    # trapezoidal profile across all joints).
+    max_velocity_scaling_factor: 0.3
+    max_acceleration_scaling_factor: 0.3
     planning_time: 1.0

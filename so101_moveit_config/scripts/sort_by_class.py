@@ -30,10 +30,25 @@ import numpy as np
 import rclpy
 import rclpy.logging
 from geometry_msgs.msg import Pose, PoseStamped, PointStamped
+from rclpy.executors import SingleThreadedExecutor
 from rclpy.node import Node
 from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
 from std_msgs.msg import String
 from tf_transformations import quaternion_from_euler
+
+
+def _spin_node_in_thread(node: Node) -> tuple[threading.Thread, SingleThreadedExecutor]:
+    """Spin ``node`` on a private SingleThreadedExecutor in a daemon thread.
+
+    Required after MoveItPy is constructed: MoveItPy installs its own global
+    executor, so a plain ``rclpy.spin(node)`` raises
+    'Executor is already spinning'.
+    """
+    executor = SingleThreadedExecutor()
+    executor.add_node(node)
+    thread = threading.Thread(target=executor.spin, daemon=True)
+    thread.start()
+    return thread, executor
 
 ARM_GROUP = "manipulator"
 GRIPPER_GROUP = "gripper"
@@ -101,10 +116,13 @@ class ObjectListener(Node):
         self._result: Optional[tuple[str, np.ndarray, str]] = None
         self._lock = threading.Lock()
 
+        # RELIABLE matches both `ros2 topic pub` defaults and the real
+        # object_classifier publishers; with BEST_EFFORT we saw the sub
+        # silently fail to match across containers under CycloneDDS.
         sensor_qos = QoSProfile(
-            reliability=ReliabilityPolicy.BEST_EFFORT,
+            reliability=ReliabilityPolicy.RELIABLE,
             history=HistoryPolicy.KEEP_LAST,
-            depth=5,
+            depth=10,
         )
         self.create_subscription(String, label_topic, self._on_label, sensor_qos)
         self.create_subscription(PointStamped, point_topic, self._on_point,
@@ -195,9 +213,9 @@ class ZoneListener(Node):
         self._lock = threading.Lock()
 
         sensor_qos = QoSProfile(
-            reliability=ReliabilityPolicy.BEST_EFFORT,
+            reliability=ReliabilityPolicy.RELIABLE,
             history=HistoryPolicy.KEEP_LAST,
-            depth=5,
+            depth=10,
         )
         self.create_subscription(PointStamped, topic, self._on_point, sensor_qos)
         self.topic = topic
@@ -309,8 +327,10 @@ class Config:
         d("zone_a_topic",       "/zone_detector/zone_a")
         d("zone_b_topic",       "/zone_detector/zone_b")
 
-        d("class_to_zone", {"red_heart_bear": "zone_a",
-                            "blue_dragon":    "zone_b"})
+        # ROS 2 parameters can't be dicts; declare a flat list of
+        # "label:zone" strings and reassemble below.
+        d("class_to_zone", ["red_heart_bear:zone_a",
+                            "blue_dragon:zone_b"])
 
         d("object_samples_required", 10)
         d("object_stability_radius_m", 0.01)
@@ -365,11 +385,10 @@ class Config:
 def detect_zone(topic: str, samples: int, radius: float,
                 timeout: float, label: str, logger) -> Optional[np.ndarray]:
     listener = ZoneListener(topic, samples, radius, timeout)
-    spin_thread = threading.Thread(target=rclpy.spin, args=(listener,),
-                                   daemon=True)
-    spin_thread.start()
+    _, executor = _spin_node_in_thread(listener)
     logger.info(f"Waiting for stable {label} on {topic}…")
     out = listener.wait()
+    executor.shutdown()
     listener.destroy_node()
     if out is None:
         logger.error(f"No stable {label} after {timeout:.0f} s")
@@ -405,10 +424,9 @@ def main() -> None:
             cfg.label_window, cfg.object_timeout,
             accept_labels,
         )
-        spin_obj = threading.Thread(target=rclpy.spin, args=(obj_listener,),
-                                    daemon=True)
-        spin_obj.start()
+        _, obj_executor = _spin_node_in_thread(obj_listener)
         obj_result = obj_listener.wait()
+        obj_executor.shutdown()
         obj_listener.destroy_node()
         if obj_result is None:
             logger.error(
