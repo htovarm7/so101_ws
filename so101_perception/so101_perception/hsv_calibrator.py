@@ -294,19 +294,23 @@ class HSVCalibrator(Node):
 def main(args=None) -> None:
     rclpy.init(args=args)
     node = HSVCalibrator()
+    
+    from rclpy.executors import MultiThreadedExecutor
+    executor = MultiThreadedExecutor(num_threads=2)
+    executor.add_node(node)
     try:
-        rclpy.spin(node)
+        executor.spin()
     except KeyboardInterrupt:
         pass
     finally:
         cv2.destroyAllWindows()
         try:
+            executor.shutdown()
             node.destroy_node()
-        except Exception: 
+        except Exception:
             pass
         if rclpy.ok():
             rclpy.shutdown()
-
 
 if __name__ == "__main__":
     main()
