@@ -43,40 +43,33 @@ object_classifier:
     # mask produces the largest contour above its min_contour_area.  Set
     # `enabled: false` to skip a slot without removing it.
     classes:
-      - label: "red_heart_bear"
-        enabled: true
-        # Red wraps around 0/180 in HSV — using H_lower > H_upper triggers
-        # the wrap-around path in the detector.
-        hsv_lower: [161, 165, 0]
-        hsv_upper: [74, 255, 204]
-        min_contour_area: 500
-
-      - label: "blue_dragon"
-        enabled: true
-        hsv_lower: [36, 87, 102]
-        hsv_upper: [147, 255, 255]
-        min_contour_area: 500
-
-      - label: "cereal_box"
-        enabled: false
-        hsv_lower: [0, 0, 0]
-        hsv_upper: [179, 255, 255]
-        min_contour_area: 500
-
-      - label: "object_4"
-        enabled: false
-        hsv_lower: [0, 0, 0]
-        hsv_upper: [179, 255, 255]
-        min_contour_area: 500
-
-      - label: "object_5"
-        enabled: false
-        hsv_lower: [0, 0, 0]
-        hsv_upper: [179, 255, 255]
-        min_contour_area: 500
-
-      - label: "object_6"
-        enabled: false
-        hsv_lower: [0, 0, 0]
-        hsv_upper: [179, 255, 255]
-        min_contour_area: 500
+    - label: red_heart_bear
+      hsv_lower: [0, 104, 0]
+      hsv_upper: [179, 255, 120]
+      min_contour_area: 500
+      enabled: true
+    - label: blue_dragon
+      hsv_lower: [63, 126, 150]
+      hsv_upper: [165, 255, 255]
+      min_contour_area: 500
+      enabled: true
+    - label: purple_cocodrile
+      hsv_lower: [109, 40, 96]
+      hsv_upper: [143, 207, 168]
+      min_contour_area: 500
+      enabled: true
+    - label: banana
+      hsv_lower: [0, 66, 136]
+      hsv_upper: [81, 200, 233]
+      min_contour_area: 500
+      enabled: true
+    - label: green_platypus
+      hsv_lower: [70, 112, 30]
+      hsv_upper: [95, 255, 149]
+      min_contour_area: 500
+      enabled: true
+    - label: object_6
+      enabled: false
+      hsv_lower: [0, 0, 0]
+      hsv_upper: [179, 255, 255]
+      min_contour_area: 500
