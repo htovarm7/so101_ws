@@ -23,17 +23,22 @@ case "${1:-moveit}" in
     echo "Starting RealSense D435 + blue-object detector (no arm)..."
     docker compose up perception-only
     ;;
+  pick-and-place)
+    echo "Starting MoveIt + RealSense + object/zone detection + pick-and-place..."
+    docker compose up pick-and-place
+    ;;
   shell)
     echo "Opening interactive shell inside the container..."
     docker compose run --rm shell
     ;;
   *)
-    echo "Usage: $0 [build|moveit|perception|perception-only|shell]"
+    echo "Usage: $0 [build|moveit|perception|perception-only|pick-and-place|shell]"
     echo ""
     echo "  build             — build the Docker image"
     echo "  moveit            — MoveIt + RViz (real arm, no camera)"
     echo "  perception        — MoveIt + RealSense D435 + blue-object detector"
     echo "  perception-only   — RealSense D435 + blue-object detector (no arm)"
+    echo "  pick-and-place    — full stack: MoveIt + RealSense + classifier + zone detector + sort_by_class"
     echo "  shell             — interactive shell inside the container"
     exit 1
     ;;

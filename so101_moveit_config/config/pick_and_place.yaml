@@ -1,0 +1,49 @@
+# Runtime parameters for the sort_by_class node.
+#
+# - class_to_zone maps the label published by object_classifier
+#   (see so101_perception/config/objects_hsv.yaml) to a drop-off zone name
+#   ("zone_a" = pink, "zone_b" = orange).
+# - Heights are in metres above the detected centroid.
+# - Stability gates require N consecutive samples within a small radius
+#   before the script trusts a detection.
+
+sort_by_class:
+  ros__parameters:
+
+    # ── Detection topics ──────────────────────────────────────────────────
+    object_label_topic: "/object_classifier/detected_label"
+    object_point_topic: "/object_classifier/detected_point"
+    zone_a_topic:       "/zone_detector/zone_a"
+    zone_b_topic:       "/zone_detector/zone_b"
+
+    # ── Class → zone mapping ──────────────────────────────────────────────
+    # Edit freely as new objects are calibrated.  Any label not listed here
+    # is skipped.
+    class_to_zone:
+      red_heart_bear: "zone_a"
+      blue_dragon:    "zone_b"
+
+    # ── Stability gates ───────────────────────────────────────────────────
+    object_samples_required: 10
+    object_stability_radius_m: 0.01
+    object_detection_timeout_s: 30.0
+
+    zone_samples_required: 5
+    zone_stability_radius_m: 0.02
+    zone_detection_timeout_s: 15.0
+
+    # Window (s) within which a `detected_point` is considered to belong to
+    # the most recently received `detected_label`.  Guards against the
+    # cross-topic race between String and PointStamped.
+    label_point_window_s: 0.15
+
+    # ── Pick geometry (relative to the object centroid) ───────────────────
+    pick_z_offset_m:    0.0    # add to centroid Z when commanding the pick pose
+    approach_height_m:  0.05   # how far above the pick pose to approach from
+    retreat_height_m:   0.08   # how far to rise after grasping
+
+    # ── Place geometry (relative to the zone centroid) ────────────────────
+    # Drop the object slightly above the sheet to avoid plowing.
+    place_z_offset_m:   0.04
+    place_approach_height_m: 0.08
+    place_retreat_height_m:  0.08
