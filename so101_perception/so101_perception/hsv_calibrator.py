@@ -328,8 +328,8 @@ class HSVCalibrator(Node):
         h, w = out.shape[:2]
 
         # Dim non-mask regions so the masked region stands out clearly.
-        dim = (out * 0.35).astype(np.uint8)
-        out = np.where(mask[..., None] > 0, out, dim)
+        inv = cv2.bitwise_not(mask)
+        out[inv > 0] = (out[inv > 0] * 0.35).astype(np.uint8)
 
         # Outline the largest contour for quick visual feedback.
         contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL,
