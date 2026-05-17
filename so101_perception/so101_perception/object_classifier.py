@@ -136,10 +136,16 @@ class ObjectClassifier(Node):
         )
         self._sync.registerCallback(self._image_cb)
 
+        pub_qos = QoSProfile(
+            reliability=ReliabilityPolicy.BEST_EFFORT,
+            history=HistoryPolicy.KEEP_LAST,
+            depth=1,
+        )
+
         self._label_pub  = self.create_publisher(String,       "~/detected_label", 10)
         self._point_pub  = self.create_publisher(PointStamped, "~/detected_point", 10)
         self._marker_pub = self.create_publisher(Marker,       "~/marker",         10)
-        self._debug_pub  = self.create_publisher(Image,        "~/debug_image",    sensor_qos)
+        self._debug_pub  = self.create_publisher(Image,        "~/debug_image",    pub_qos)
 
         enabled = [c.label for c in self._classes if c.enabled]
         self.get_logger().info(
