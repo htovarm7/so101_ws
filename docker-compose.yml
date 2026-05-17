@@ -18,6 +18,8 @@ services:
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - ./papu_ros2.json:/calibration/papu.json:ro
+    devices:
+      - /dev/ttyACM0:/dev/ttyACM0
     group_add:
       - dialout
     network_mode: host
@@ -48,6 +50,8 @@ services:
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - ./papu_ros2.json:/calibration/papu.json:ro
+    devices:
+      - /dev/ttyACM0:/dev/ttyACM0
     group_add:
       - dialout
     network_mode: host
@@ -103,6 +107,8 @@ services:
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - ./papu_ros2.json:/calibration/papu.json:ro
+    devices:
+      - /dev/ttyACM0:/dev/ttyACM0
     group_add:
       - dialout
     network_mode: host
@@ -133,6 +139,8 @@ services:
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - ./papu_ros2.json:/calibration/papu.json:ro
+    devices:
+      - /dev/ttyACM0:/dev/ttyACM0
     group_add:
       - dialout
     network_mode: host
