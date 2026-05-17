@@ -91,7 +91,12 @@ class HSVCalibrator(Node):
         self.create_subscription(Image, color_topic, self._image_cb, sensor_qos)
 
         # ── Publishers ────────────────────────────────────────────────────────
-        self._debug_pub = self.create_publisher(Image, "~/debug_image", sensor_qos)
+        pub_qos = QoSProfile(
+            reliability=ReliabilityPolicy.BEST_EFFORT,
+            history=HistoryPolicy.KEEP_LAST,
+            depth=1,
+        )
+        self._debug_pub = self.create_publisher(Image, "~/debug_image", pub_qos)
 
         # ── Services (replaces the trigger-parameter mechanism) ───────────────
         self.create_service(Trigger, "~/save_class",  self._srv_save)
