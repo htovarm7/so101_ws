@@ -77,7 +77,7 @@ services:
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - /dev:/dev
-      - ./src:/ros2_ws/src
+      - ./:/ros2_ws/src/so101_ros:rw
     network_mode: host
     ipc: host
     privileged: true
