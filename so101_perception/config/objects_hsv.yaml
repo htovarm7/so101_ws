@@ -47,14 +47,14 @@ object_classifier:
         enabled: true
         # Red wraps around 0/180 in HSV — using H_lower > H_upper triggers
         # the wrap-around path in the detector.
-        hsv_lower: [170, 120, 70]
-        hsv_upper: [10,  255, 255]
+        hsv_lower: [161, 165, 0]
+        hsv_upper: [74, 255, 204]
         min_contour_area: 500
 
       - label: "blue_dragon"
         enabled: true
-        hsv_lower: [85,  80, 60]
-        hsv_upper: [115, 255, 255]
+        hsv_lower: [36, 87, 102]
+        hsv_upper: [147, 255, 255]
         min_contour_area: 500
 
       - label: "cereal_box"
