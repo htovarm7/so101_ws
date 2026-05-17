@@ -39,9 +39,9 @@ from std_srvs.srv import Trigger
 DEFAULT_LABELS: List[str] = [
     "red_heart_bear",
     "blue_dragon",
-    "cereal_box",
-    "object_4",
-    "object_5",
+    "purple_cocodrile",
+    "banana",
+    "green_platypus",
     "object_6",
 ]
 
