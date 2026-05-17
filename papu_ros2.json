@@ -36,11 +36,12 @@
             "range_max": 4095
         },
         "gripper": {
-            "id": 6,
-            "drive_mode": 0,
-            "homing_offset": 1166,
-            "range_min": 2040,
-            "range_max": 2047
+        "id": 6,
+        "drive_mode": 0,
+        "homing_offset": 1166,
+        "range_min": 2100,
+        "range_max": 3200
         }
+
     }
 }
