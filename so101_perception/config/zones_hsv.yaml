@@ -1,0 +1,51 @@
+# Parameters for the so101_perception/zone_detector node.
+#
+# The detector publishes the 3-D centroid of the largest pink (ZONE_A) and
+# orange (ZONE_B) blobs in every synchronised colour+depth frame.  Seed HSV
+# ranges come from the original Paola standalone script — re-tune them with
+# `hsv_calibrator` if lighting differs.
+#
+# OpenCV convention: H in [0, 179], S/V in [0, 255].
+
+zone_detector:
+  ros__parameters:
+
+    # ── TF bridge (same values as object_classifier) ─────────────────────────
+    parent_link: "moving_jaw_so101_v1_link"
+    mount_x:   0.0
+    mount_y:   0.0
+    mount_z:  -0.02
+    mount_qx: -0.5
+    mount_qy:  0.5
+    mount_qz: -0.5
+    mount_qw: -0.5
+
+    target_frame: "base_link"
+
+    # ── Input topics ──────────────────────────────────────────────────────────
+    color_image_topic: "/camera/camera/color/image_raw"
+    depth_image_topic: "/camera/camera/aligned_depth_to_color/image_raw"
+    camera_info_topic: "/camera/camera/color/camera_info"
+
+    # ── Depth ─────────────────────────────────────────────────────────────────
+    depth_scale: 0.001
+    max_depth_m: 3.0
+    marker_lifetime_s: 1.0
+
+    # Disable when another perception node (object_classifier,
+    # blue_object_detector) already broadcasts the gripper->camera static TF.
+    publish_camera_tf: true
+
+    # ── ZONE A — PINK ─────────────────────────────────────────────────────────
+    zone_a:
+      hsv_lower: [140, 50, 50]
+      hsv_upper: [170, 255, 255]
+      # ~US-letter sheet seen from ~50 cm is several thousand pixels;
+      # raise this to ignore stray pink in the background.
+      min_contour_area: 5000
+
+    # ── ZONE B — ORANGE ───────────────────────────────────────────────────────
+    zone_b:
+      hsv_lower: [5, 100, 100]
+      hsv_upper: [20, 255, 255]
+      min_contour_area: 5000
