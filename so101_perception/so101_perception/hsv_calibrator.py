@@ -89,7 +89,7 @@ class HSVCalibrator(Node):
 
         # ── Subscriptions ─────────────────────────────────────────────────────
         sensor_qos = QoSProfile(
-            reliability=ReliabilityPolicy.BEST_EFFORT,
+            reliability=ReliabilityPolicy.RELIABLE,
             history=HistoryPolicy.KEEP_LAST,
             depth=1,
         )

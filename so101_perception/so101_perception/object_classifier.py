@@ -122,7 +122,7 @@ class ObjectClassifier(Node):
         self._tf_listener = tf2_ros.TransformListener(self._tf_buffer, self)
 
         sensor_qos = QoSProfile(
-            reliability=ReliabilityPolicy.BEST_EFFORT,
+            reliability=ReliabilityPolicy.RELIABLE,
             history=HistoryPolicy.KEEP_LAST,
             depth=1,
         )
