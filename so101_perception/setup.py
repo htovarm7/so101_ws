@@ -25,6 +25,7 @@ setup(
             "blue_object_detector = so101_perception.blue_object_detector:main",
             "hsv_calibrator       = so101_perception.hsv_calibrator:main",
             "object_classifier    = so101_perception.object_classifier:main",
+            "zone_detector        = so101_perception.zone_detector:main",
         ],
     },
 )
