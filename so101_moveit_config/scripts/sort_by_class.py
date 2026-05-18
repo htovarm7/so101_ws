@@ -16,6 +16,7 @@ High-level sequence:
 
 Most thresholds live in ``pick_and_place.yaml``.
 """
+
 from __future__ import annotations
 
 import os
@@ -35,6 +36,8 @@ from rclpy.node import Node
 from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
 from std_msgs.msg import String
 from tf_transformations import quaternion_from_euler
+from moveit.core.robot_state import RobotState
+from moveit.planning import MoveItPy, MultiPipelinePlanRequestParameters
 
 
 def _spin_node_in_thread(node: Node) -> tuple[threading.Thread, SingleThreadedExecutor]:
@@ -50,6 +53,7 @@ def _spin_node_in_thread(node: Node) -> tuple[threading.Thread, SingleThreadedEx
     thread.start()
     return thread, executor
 
+
 ARM_GROUP = "manipulator"
 GRIPPER_GROUP = "gripper"
 EE_FRAME = "gripper_frame_link"
@@ -61,6 +65,7 @@ REST_STATE = "rest"
 # ---------------------------------------------------------------------------
 #  Pose helpers
 # ---------------------------------------------------------------------------
+
 
 def topdown_rpy_for(xyz_m) -> tuple[float, float, float]:
     """Top-down orientation with yaw aimed radially at the target.
@@ -90,6 +95,7 @@ def make_pose_stamped(xyz_m, rpy_rad, frame_id: str = BASE_FRAME) -> PoseStamped
 #  Detection listeners
 # ---------------------------------------------------------------------------
 
+
 class ObjectListener(Node):
     """Buffers the most recent label and waits for a stable classified point.
 
@@ -98,10 +104,16 @@ class ObjectListener(Node):
     point to the most recent label seen inside ``label_window_s``.
     """
 
-    def __init__(self, label_topic: str, point_topic: str,
-                 samples_required: int, stability_radius_m: float,
-                 label_window_s: float, timeout_s: float,
-                 accept_labels: set[str]):
+    def __init__(
+        self,
+        label_topic: str,
+        point_topic: str,
+        samples_required: int,
+        stability_radius_m: float,
+        label_window_s: float,
+        timeout_s: float,
+        accept_labels: set[str],
+    ):
         super().__init__("sort_by_class_object_listener")
         self.samples_required = samples_required
         self.stability_radius_m = stability_radius_m
@@ -125,8 +137,7 @@ class ObjectListener(Node):
             depth=10,
         )
         self.create_subscription(String, label_topic, self._on_label, sensor_qos)
-        self.create_subscription(PointStamped, point_topic, self._on_point,
-                                 sensor_qos)
+        self.create_subscription(PointStamped, point_topic, self._on_point, sensor_qos)
         self.get_logger().info(
             f"Listening: labels='{label_topic}' points='{point_topic}' "
             f"accept={sorted(self.accept_labels) or 'ANY'}"
@@ -146,9 +157,7 @@ class ObjectListener(Node):
             if label is None or label == "none":
                 return
             if self.accept_labels and label not in self.accept_labels:
-                self.get_logger().info(
-                    f"Ignoring point for unmapped label '{label}'"
-                )
+                self.get_logger().info(f"Ignoring point for unmapped label '{label}'")
                 return
             if self._frame_id is None:
                 self._frame_id = msg.header.frame_id
@@ -200,8 +209,13 @@ class ObjectListener(Node):
 class ZoneListener(Node):
     """Waits for a stable detection on a single zone topic."""
 
-    def __init__(self, topic: str, samples_required: int,
-                 stability_radius_m: float, timeout_s: float):
+    def __init__(
+        self,
+        topic: str,
+        samples_required: int,
+        stability_radius_m: float,
+        timeout_s: float,
+    ):
         super().__init__(f"sort_by_class_zone_listener_{os.urandom(2).hex()}")
         self.samples_required = samples_required
         self.stability_radius_m = stability_radius_m
@@ -254,12 +268,13 @@ class ZoneListener(Node):
 #  MoveIt helpers
 # ---------------------------------------------------------------------------
 
-def plan_and_execute(robot, planning_component, logger,
-                     multi_plan_parameters=None) -> bool:
+
+def plan_and_execute(
+    robot, planning_component, logger, multi_plan_parameters=None
+) -> bool:
     logger.info("Planning…")
     if multi_plan_parameters is not None:
-        result = planning_component.plan(
-            multi_plan_parameters=multi_plan_parameters)
+        result = planning_component.plan(multi_plan_parameters=multi_plan_parameters)
     else:
         result = planning_component.plan()
     if not result:
@@ -270,9 +285,10 @@ def plan_and_execute(robot, planning_component, logger,
     return True
 
 
-def solve_ik_and_plan(robot, arm, logger, pose: Pose,
-                      plan_params, ik_timeout: float = 0.2) -> bool:
-    from moveit.core.robot_state import RobotState
+def solve_ik_and_plan(
+    robot, arm, logger, pose: Pose, plan_params, ik_timeout: float = 0.2
+) -> bool:
+
     robot_model = robot.get_robot_model()
     robot_state = RobotState(robot_model)
     with robot.get_planning_scene_monitor().read_only() as scene:
@@ -287,23 +303,37 @@ def solve_ik_and_plan(robot, arm, logger, pose: Pose,
     robot_state.update()
     arm.set_start_state_to_current_state()
     arm.set_goal_state(robot_state=robot_state)
-    return plan_and_execute(robot, arm, logger,
-                            multi_plan_parameters=plan_params)
+    return plan_and_execute(robot, arm, logger, multi_plan_parameters=plan_params)
 
 
-def plan_linear_cartesian(robot, arm, logger,
-                          pose_stamped: PoseStamped, plan_params) -> bool:
+def plan_linear_cartesian(
+    robot, arm, logger, pose_stamped: PoseStamped, plan_params
+) -> bool:
     arm.set_start_state_to_current_state()
     arm.set_goal_state(pose_stamped_msg=pose_stamped, pose_link=EE_FRAME)
-    return plan_and_execute(robot, arm, logger,
-                            multi_plan_parameters=plan_params)
+    return plan_and_execute(robot, arm, logger, multi_plan_parameters=plan_params)
 
 
 def goto_named_state(robot, arm, logger, name: str, plan_params) -> bool:
     arm.set_start_state_to_current_state()
     arm.set_goal_state(configuration_name=name)
-    return plan_and_execute(robot, arm, logger,
-                            multi_plan_parameters=plan_params)
+    return plan_and_execute(robot, arm, logger, multi_plan_parameters=plan_params)
+
+
+def goto_modified_joint(
+    robot, arm, logger, joint_idx: int, angle_rad: float, plan_params
+) -> bool:
+
+    robot_model = robot.get_robot_model()
+    robot_state = RobotState(robot_model)
+    with robot.get_planning_scene_monitor().read_only() as scene:
+        positions = list(scene.current_state.get_joint_group_positions(ARM_GROUP))
+    positions[joint_idx] = angle_rad
+    robot_state.set_joint_group_positions(ARM_GROUP, positions)
+    robot_state.update()
+    arm.set_start_state_to_current_state()
+    arm.set_goal_state(robot_state=robot_state)
+    return plan_and_execute(robot, arm, logger, multi_plan_parameters=plan_params)
 
 
 def set_gripper(robot, gripper, logger, named_state: str) -> bool:
@@ -317,6 +347,7 @@ def set_gripper(robot, gripper, logger, named_state: str) -> bool:
 #  Main config + flow
 # ---------------------------------------------------------------------------
 
+
 class Config:
     """Pull every tunable knob from the ROS parameter server."""
 
@@ -324,13 +355,12 @@ class Config:
         d = node.declare_parameter
         d("object_label_topic", "/object_classifier/detected_label")
         d("object_point_topic", "/object_classifier/detected_point")
-        d("zone_a_topic",       "/zone_detector/zone_a")
-        d("zone_b_topic",       "/zone_detector/zone_b")
+        d("zone_a_topic", "/zone_detector/zone_a")
+        d("zone_b_topic", "/zone_detector/zone_b")
 
         # ROS 2 parameters can't be dicts; declare a flat list of
         # "label:zone" strings and reassemble below.
-        d("class_to_zone", ["red_heart_bear:zone_a",
-                            "blue_dragon:zone_b"])
+        d("class_to_zone", ["red_heart_bear:zone_a", "blue_dragon:zone_b"])
 
         d("object_samples_required", 10)
         d("object_stability_radius_m", 0.01)
@@ -340,12 +370,12 @@ class Config:
         d("zone_detection_timeout_s", 15.0)
         d("label_point_window_s", 0.15)
 
-        d("pick_z_offset_m",    0.0)
-        d("approach_height_m",  0.05)
-        d("retreat_height_m",   0.08)
-        d("place_z_offset_m",   0.04)
+        d("pick_z_offset_m", 0.0)
+        d("approach_height_m", 0.05)
+        d("retreat_height_m", 0.08)
+        d("place_z_offset_m", 0.04)
         d("place_approach_height_m", 0.08)
-        d("place_retreat_height_m",  0.08)
+        d("place_retreat_height_m", 0.08)
 
         g = node.get_parameter
         self.label_topic = g("object_label_topic").value
@@ -367,23 +397,24 @@ class Config:
         self.class_to_zone: Dict[str, str] = dict(raw_map)
 
         self.object_samples = int(g("object_samples_required").value)
-        self.object_radius  = float(g("object_stability_radius_m").value)
+        self.object_radius = float(g("object_stability_radius_m").value)
         self.object_timeout = float(g("object_detection_timeout_s").value)
-        self.zone_samples   = int(g("zone_samples_required").value)
-        self.zone_radius    = float(g("zone_stability_radius_m").value)
-        self.zone_timeout   = float(g("zone_detection_timeout_s").value)
-        self.label_window   = float(g("label_point_window_s").value)
+        self.zone_samples = int(g("zone_samples_required").value)
+        self.zone_radius = float(g("zone_stability_radius_m").value)
+        self.zone_timeout = float(g("zone_detection_timeout_s").value)
+        self.label_window = float(g("label_point_window_s").value)
 
-        self.pick_z      = float(g("pick_z_offset_m").value)
-        self.approach    = float(g("approach_height_m").value)
-        self.retreat     = float(g("retreat_height_m").value)
-        self.place_z     = float(g("place_z_offset_m").value)
-        self.place_app   = float(g("place_approach_height_m").value)
-        self.place_ret   = float(g("place_retreat_height_m").value)
+        self.pick_z = float(g("pick_z_offset_m").value)
+        self.approach = float(g("approach_height_m").value)
+        self.retreat = float(g("retreat_height_m").value)
+        self.place_z = float(g("place_z_offset_m").value)
+        self.place_app = float(g("place_approach_height_m").value)
+        self.place_ret = float(g("place_retreat_height_m").value)
 
 
-def detect_zone(topic: str, samples: int, radius: float,
-                timeout: float, label: str, logger) -> Optional[np.ndarray]:
+def detect_zone(
+    topic: str, samples: int, radius: float, timeout: float, label: str, logger
+) -> Optional[np.ndarray]:
     listener = ZoneListener(topic, samples, radius, timeout)
     _, executor = _spin_node_in_thread(listener)
     logger.info(f"Waiting for stable {label} on {topic}…")
@@ -394,9 +425,7 @@ def detect_zone(topic: str, samples: int, radius: float,
         logger.error(f"No stable {label} after {timeout:.0f} s")
         return None
     mean, _ = out
-    logger.info(
-        f"{label} centroid: ({mean[0]:+.3f}, {mean[1]:+.3f}, {mean[2]:.3f}) m"
-    )
+    logger.info(f"{label} centroid: ({mean[0]:+.3f}, {mean[1]:+.3f}, {mean[2]:.3f}) m")
     return mean
 
 
@@ -419,9 +448,12 @@ def main() -> None:
 
         # ── 1) Detect object ─────────────────────────────────────────────
         obj_listener = ObjectListener(
-            cfg.label_topic, cfg.point_topic,
-            cfg.object_samples, cfg.object_radius,
-            cfg.label_window, cfg.object_timeout,
+            cfg.label_topic,
+            cfg.point_topic,
+            cfg.object_samples,
+            cfg.object_radius,
+            cfg.label_window,
+            cfg.object_timeout,
             accept_labels,
         )
         _, obj_executor = _spin_node_in_thread(obj_listener)
@@ -436,9 +468,7 @@ def main() -> None:
             os._exit(1)
         obj_label, obj_xyz, obj_frame = obj_result
         if obj_frame != BASE_FRAME:
-            logger.warn(
-                f"Object frame '{obj_frame}' != expected '{BASE_FRAME}'"
-            )
+            logger.warn(f"Object frame '{obj_frame}' != expected '{BASE_FRAME}'")
         zone_name = cfg.class_to_zone.get(obj_label)
         if zone_name is None or zone_name not in cfg.zone_topics:
             logger.error(
@@ -451,23 +481,45 @@ def main() -> None:
 
         # ── MoveItPy ─────────────────────────────────────────────────────
         logger.info("Creating MoveItPy…")
-        from moveit.planning import MoveItPy, MultiPipelinePlanRequestParameters
+
         robot = MoveItPy(
             node_name="moveit_py_sort",
             remappings={"joint_states": "/follower/joint_states"},
         )
         logger.info("MoveItPy ready")
-        arm     = robot.get_planning_component(ARM_GROUP)
+        arm = robot.get_planning_component(ARM_GROUP)
         gripper = robot.get_planning_component(GRIPPER_GROUP)
-        ompl     = MultiPipelinePlanRequestParameters(robot, ["ompl_rrtc"])
+        ompl = MultiPipelinePlanRequestParameters(robot, ["ompl_rrtc"])
         pilz_lin = MultiPipelinePlanRequestParameters(robot, ["pilz_lin"])
 
-        # ── 2) Detect both zones BEFORE the pick (sanity check) ──────────
-        zone_xyz = detect_zone(
-            zone_topic, cfg.zone_samples, cfg.zone_radius,
-            cfg.zone_timeout, zone_name, logger,
-        )
-        if zone_xyz is None:
+        # ── 2) Sweeping scan to locate the destination zone ──────────────────
+        SWEEP_STEPS = 5
+        SWEEP_TIMEOUT_S = 3.0  # timeout per-step
+
+        logger.info(f"── Going to '{SCAN_STATE}' for zone sweep ──")
+        if not goto_named_state(robot, arm, logger, SCAN_STATE, ompl):
+            os._exit(1)
+        time.sleep(0.5)
+
+        zone_xyz_prepick: Optional[np.ndarray] = None
+        for angle in np.linspace(-np.pi / 2, np.pi / 2, SWEEP_STEPS):
+            logger.info(f"── Sweep: joint_0 -> {np.degrees(angle):.1f}° ──")
+            goto_modified_joint(robot, arm, logger, 0, float(angle), ompl)
+            time.sleep(0.5)
+            zone_xyz_prepick = detect_zone(
+                zone_topic,
+                cfg.zone_samples,
+                cfg.zone_radius,
+                SWEEP_TIMEOUT_S,
+                zone_name,
+                logger,
+            )
+            if zone_xyz_prepick is not None:
+                logger.info("Zone found during sweep — stopping early")
+                break
+
+        if zone_xyz_prepick is None:
+            logger.error(f"Zone '{zone_name}' not found after sweep — aborting.")
             os._exit(1)
 
         # ── 3) PICK ──────────────────────────────────────────────────────
@@ -510,12 +562,18 @@ def main() -> None:
             os._exit(1)
         time.sleep(0.5)
 
-        zone_xyz = detect_zone(
-            zone_topic, cfg.zone_samples, cfg.zone_radius,
-            cfg.zone_timeout, f"{zone_name} (fresh)", logger,
+        zone_xyz_postpick = detect_zone(
+            zone_topic,
+            cfg.zone_samples,
+            cfg.zone_radius,
+            cfg.zone_timeout,
+            f"{zone_name} (fresh)",
+            logger,
         )
-        if zone_xyz is None:
-            os._exit(1)
+
+        zone_xyz = (
+            zone_xyz_postpick if zone_xyz_postpick is not None else zone_xyz_prepick
+        )
 
         # ── 5) PLACE ─────────────────────────────────────────────────────
         place_xyz = zone_xyz.copy()
