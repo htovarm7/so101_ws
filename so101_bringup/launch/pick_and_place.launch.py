@@ -109,9 +109,12 @@ def _setup(context):
         .moveit_cpp(
             file_path=os.path.join(pkg_moveit_cfg, "config", "moveit_py_config.yaml")
         )
-        .sensors_3d(
-            file_path=os.path.join(pkg_moveit_cfg, "config", "sensors_3d.yaml")
-        )
+        # OctoMap disabled for now — default voxel size made the obstacles
+        # too coarse and blocked otherwise-valid pick approach poses.  Re-enable
+        # once the resolution / padding are tuned (see sensors_3d.yaml).
+        # .sensors_3d(
+        #     file_path=os.path.join(pkg_moveit_cfg, "config", "sensors_3d.yaml")
+        # )
         .to_moveit_configs()
     )
 

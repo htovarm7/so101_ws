@@ -1,8 +1,21 @@
 manipulator:
   kinematics_solver: pick_ik/PickIkPlugin
-  kinematics_solver_timeout: 0.2
-  kinematics_solver_attempts: 10
+  kinematics_solver_timeout: 0.5
+  kinematics_solver_attempts: 30
+  # Position/rotation_scale weight the cost during global search.  Lowering
+  # rotation lets pick_ik trade orientation accuracy for position accuracy
+  # — essential for a 5-DOF arm doing 6-DOF top-down where exact rotation
+  # is often unreachable.
   position_scale: 1.0
-  rotation_scale: 0.5
-  approximate: true           # return best-effort solution, don't fail
-  mode: global                # global search (like DLS with random restarts)
+  rotation_scale: 0.1
+  approximate: true
+  mode: global
+  # Approximate-solution acceptance thresholds.  pick_ik with `approximate:
+  # true` only returns a candidate if it falls within these.  The defaults
+  # are ~1 mm / 1 mrad, which forces pick_ik to reject perfectly usable
+  # near-solutions and return NO_IK_SOLUTION instead.  These looser values
+  # let it return the best approximate it found, which is then refined by
+  # the visual-servoing feedback loop downstream.
+  position_threshold: 0.05            # 5 cm absolute position tolerance
+  orientation_threshold: 0.6          # ~34° orientation tolerance
+  cost_threshold: 0.001               # don't filter out approximate hits

@@ -44,7 +44,7 @@ sort_by_class:
     pick_x_offset_m:    0.0
     pick_y_offset_m:    0.0
     pick_z_offset_m:    0.0    # add to centroid Z when commanding the pick pose
-    approach_height_m:  0.05   # how far above the pick pose to approach from
+    approach_height_m:  0.02   # how far above the pick pose to approach from
     # Match approach_height so the LIN retreat ends exactly where the approach
     # started — that pose is already IK-validated.  Raising it further can
     # cross an IK singularity on the 5-DOF SO-101.
@@ -58,3 +58,10 @@ sort_by_class:
     place_z_offset_m:   0.03
     place_approach_height_m: 0.03
     place_retreat_height_m:  0.03
+
+    # Hardcoded XYZ override (in base_link).  When all three are non-zero
+    # the perception centroid is REPLACED by this point — useful to test
+    # the motion pipeline without depending on camera calibration.
+    # Set back to [0.0, 0.0, 0.0] to use perception again.
+    # Known-reachable: x=0.20 m radial, y=0, z=0.05 m above base_link.
+    test_pick_xyz: [0.0, 0.0, 0.0]

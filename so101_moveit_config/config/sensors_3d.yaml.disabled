@@ -1,0 +1,32 @@
+# 3-D sensor plugin(s) for MoveIt's octomap.
+#
+# moveit_configs_utils.sensors_3d() expects the named-sensor schema:
+# - `sensors:` is a *list of sensor names* (strings).
+# - Each name must have a top-level block with its parameters.
+# Inlining the parameter dict under `sensors:` fails with
+#   "Failed to handle type {...}" at launch.
+#
+# Source: RealSense D435 wrist-mounted camera, aligned-depth-to-color stream
+# (matches the depth topic used by object_classifier and zone_detector).
+#
+# NOTE: enabling this populates the planning scene with the visible
+# workspace as obstacles.  Pick/place poses that brush against detected
+# objects (or the table) may start failing collision checks even though
+# IK accepts them.  Tune padding_offset / max_range or pause the updater
+# during the grasp if that becomes a problem.
+
+sensors:
+  - wrist_depth
+
+wrist_depth:
+  sensor_plugin: occupancy_map_monitor/DepthImageOctomapUpdater
+  image_topic: /camera/cam_static/aligned_depth_to_color/image_raw
+  queue_size: 5
+  near_clipping_plane_distance: 0.3
+  far_clipping_plane_distance: 3.0
+  shadow_threshold: 0.2
+  padding_scale: 4.0
+  padding_offset: 0.03
+  max_update_rate: 1.0
+  filtered_cloud_topic: filtered_cloud
+  ns: ""
