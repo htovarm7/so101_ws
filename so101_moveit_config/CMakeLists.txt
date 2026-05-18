@@ -19,5 +19,6 @@ install(FILES .setup_assistant DESTINATION share/${PROJECT_NAME})
 install(PROGRAMS
   scripts/so101_moveit_test.py
   scripts/sort_by_class.py
+  scripts/sort_by_class_servo.py
   DESTINATION lib/${PROJECT_NAME}
 )

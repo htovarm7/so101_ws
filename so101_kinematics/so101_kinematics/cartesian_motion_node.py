@@ -97,15 +97,33 @@ class CartesianMotionNode(Node):
         self.declare_parameter("cmd_topic", "/follower/forward_controller/commands")
         self.declare_parameter("base_frame", "follower/base_link")
         self.declare_parameter("robot_description", "so_arm101_description")
+        # When set, the published Float64MultiArray contains only these
+        # joints in this order — needed when targeting a controller that
+        # owns a subset of the robot's joints (e.g. arm_forward_controller
+        # has the 5 arm joints, gripper is on a separate action controller).
+        # Empty means publish all solver.joint_names in solver order.
+        self.declare_parameter("command_joint_names", [""])
 
         self._base_frame = str(self.get_parameter("base_frame").value)
 
         # ── Solver / planner ──
-        model = load_robot_description(
-            str(self.get_parameter("robot_description").value)
-        )
+        # `robot_description` accepts either a package name (resolved via
+        # robokin's robot_descriptions registry) or an absolute path to a
+        # URDF on disk.  The pick-and-place stack uses the absolute path
+        # variant so Placo plans against the real-hardware URDF that bakes
+        # in the per-servo calibration from papu.json, instead of the
+        # nominal SO-ARM100 URDF that ships with robokin.
+        rd_param = str(self.get_parameter("robot_description").value)
+        if rd_param.startswith("/"):
+            urdf_path = rd_param
+            self.get_logger().info(f"Using URDF from absolute path: {urdf_path}")
+        else:
+            model = load_robot_description(rd_param)
+            urdf_path = str(model.urdf_path)
+            self.get_logger().info(
+                f"Using URDF from package '{rd_param}': {urdf_path}")
         self.solver = PlacoKinematics(
-            urdf_path=str(model.urdf_path),
+            urdf_path=urdf_path,
             ee_frame=EE_FRAME,
             cfg=PlacoConfig(dt=DT),
         )
@@ -113,6 +131,23 @@ class CartesianMotionNode(Node):
         self.gripper_index = self.joint_names.index("gripper")
         self.planner = MotionPlanner(self.solver)
         self.traj_executor = TrajectoryExecutor()
+
+        # Indices to project the full solver-order vector onto whatever
+        # subset/order the downstream controller expects.  When the
+        # `command_joint_names` parameter is empty or [""], we publish the
+        # full vector unchanged.
+        cmd_joints = [
+            n for n in self.get_parameter("command_joint_names").value
+            if n
+        ]
+        if cmd_joints:
+            self._command_indices = [self.joint_names.index(n) for n in cmd_joints]
+            self.get_logger().info(
+                f"Publishing arm-only subset {cmd_joints} "
+                f"(indices {self._command_indices})"
+            )
+        else:
+            self._command_indices = None  # publish full vector
 
         # ── State ──
         self._q_measured: Optional[np.ndarray] = None
@@ -370,7 +405,10 @@ class CartesianMotionNode(Node):
 
     def _publish(self, q_cmd: np.ndarray):
         msg = Float64MultiArray()
-        msg.data = [float(v) for v in q_cmd]
+        if self._command_indices is None:
+            msg.data = [float(v) for v in q_cmd]
+        else:
+            msg.data = [float(q_cmd[i]) for i in self._command_indices]
         self.cmd_pub.publish(msg)
 
 

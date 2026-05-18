@@ -27,6 +27,10 @@ case "${1:-moveit}" in
     echo "Starting MoveIt + RealSense + object/zone detection + pick-and-place..."
     docker compose up pick-and-place
     ;;
+  pick-and-place-servo)
+    echo "Starting Placo IK + RealSense + perception (Phase 2 verification)..."
+    docker compose up pick-and-place-servo
+    ;;
   shell)
     echo "Opening interactive shell inside the container..."
     docker compose run --rm shell
@@ -39,6 +43,7 @@ case "${1:-moveit}" in
     echo "  perception        — MoveIt + RealSense D435 + blue-object detector"
     echo "  perception-only   — RealSense D435 + blue-object detector (no arm)"
     echo "  pick-and-place    — full stack: MoveIt + RealSense + classifier + zone detector + sort_by_class"
+    echo "  pick-and-place-servo — Placo IK + RealSense + perception (Phase 2; no MoveIt)"
     echo "  shell             — interactive shell inside the container"
     exit 1
     ;;

@@ -50,6 +50,16 @@ RUN git clone --depth 1 https://github.com/TartanLlama/expected.git /tmp/expecte
     && cmake --install /tmp/expected/build \
     && rm -rf /tmp/expected
 
+# robokin (Placo backend) for the Cartesian motion / IK servoing nodes in
+# so101_kinematics.  The README of so101_kinematics documents this exact
+# sequence: install with pip (it pulls numpy 2.x as a transitive dep),
+# then uninstall the pip numpy so ROS 2's apt-installed numpy 1.x wins
+# again.  Without this step rclpy/cv_bridge get confused at import time.
+RUN apt-get update && apt-get install -y python3-pip && rm -rf /var/lib/apt/lists/* \
+    && pip install --no-cache-dir --break-system-packages --ignore-installed \
+        "robokin[placo] @ git+https://github.com/legalaspro/robokin.git" \
+    && pip uninstall -y --break-system-packages numpy
+
 WORKDIR /ros2_ws
 
 # Copy workspace source
@@ -66,6 +76,7 @@ RUN source /opt/ros/jazzy/setup.bash && \
       --packages-select \
         so101_description \
         so101_kinematics_msgs \
+        so101_kinematics \
         so101_moveit_config \
         so101_bringup \
         so101_perception \
