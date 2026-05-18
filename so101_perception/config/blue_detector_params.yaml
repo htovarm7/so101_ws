@@ -21,7 +21,7 @@ blue_object_detector:
     mount_x:   0.0
     mount_y:   0.0
     mount_z:  -0.02
-    mount_qx: -0.5
+    mount_qx: 0.5
     mount_qy:  0.5
     mount_qz: -0.5
     mount_qw: -0.5

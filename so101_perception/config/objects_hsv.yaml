@@ -17,8 +17,8 @@ object_classifier:
     parent_link: "moving_jaw_so101_v1_link"
     mount_x:   0.0
     mount_y:   0.0
-    mount_z:  -0.227
-    mount_qx: -0.5
+    mount_z:  0.0
+    mount_qx: 0.5
     mount_qy:  0.5
     mount_qz: -0.5
     mount_qw: -0.5
@@ -46,7 +46,7 @@ object_classifier:
     - label: red_heart_bear
       hsv_lower: [147, 117, 26]
       hsv_upper: [9, 255, 138]
-      min_contour_area: 500
+      min_contour_area: 300
       enabled: true
     - label: blue_dragon
       hsv_lower: [63, 126, 150]
