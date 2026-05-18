@@ -64,7 +64,7 @@ class ObjectClassifier(Node):
         super().__init__("object_classifier")
 
         self.declare_parameter("color_image_topic",
-                               "/camera/cam_static/color/image_raw")
+                               "/camera/camera/color/image_raw")
         self.declare_parameter("depth_image_topic",
                                "/camera/cam_static/aligned_depth_to_color/image_raw")
         self.declare_parameter("camera_info_topic",
@@ -365,7 +365,10 @@ class ObjectClassifier(Node):
 
     def _publish_point(self, stamp, X: float, Y: float, Z: float, label: str) -> None:
         cam_pt = PointStamped()
-        cam_pt.header.stamp = stamp
+        # Use zero time = "latest available" to avoid extrapolation errors when
+        # the robot's joint_states TF chain lags behind the camera frame stamp.
+        # Safe here because detection runs at scan_pose with the arm static.
+        cam_pt.header.stamp = rclpy.time.Time().to_msg()
         cam_pt.header.frame_id = self._camera_frame
         cam_pt.point.x = float(X)
         cam_pt.point.y = float(Y)
@@ -375,7 +378,7 @@ class ObjectClassifier(Node):
             tgt_pt = self._tf_buffer.transform(
                 cam_pt,
                 self._target_frame,
-                timeout=RclDuration(seconds=0.1),
+                timeout=RclDuration(seconds=0.2),
             )
         except (tf2_ros.LookupException,
                 tf2_ros.ExtrapolationException,
@@ -385,7 +388,16 @@ class ObjectClassifier(Node):
             )
             return
 
+        # Restore the real frame stamp so downstream consumers (sort_by_class)
+        # can correlate this point with the label message via timestamp.
+        tgt_pt.header.stamp = stamp
         self._point_pub.publish(tgt_pt)
+        # self.get_logger().info(
+        #     f"{label}: base=({tgt_pt.point.x:+.3f},"
+        #     f"{tgt_pt.point.y:+.3f},{tgt_pt.point.z:+.3f}) "
+        #     f"cam=({X:+.3f},{Y:+.3f},{Z:+.3f})",
+        #     throttle_duration_sec=1.0,
+        # )
 
         m = Marker()
         m.header = tgt_pt.header

@@ -114,6 +114,11 @@ services:
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - ./papu_ros2.json:/calibration/papu.json:ro
+      # Mount config files so they can be tuned without a docker rebuild.
+      # Edit the host file, restart the service, and the new values are used.
+      - ./so101_moveit_config/config/pick_and_place.yaml:/ros2_ws/install/so101_moveit_config/share/so101_moveit_config/config/pick_and_place.yaml:ro
+      - ./so101_perception/config/objects_hsv.yaml:/ros2_ws/install/so101_perception/share/so101_perception/config/objects_hsv.yaml:ro
+      - ./so101_perception/config/zones_hsv.yaml:/ros2_ws/install/so101_perception/share/so101_perception/config/zones_hsv.yaml:ro
     devices:
       - /dev/ttyACM0:/dev/ttyACM0
     group_add:

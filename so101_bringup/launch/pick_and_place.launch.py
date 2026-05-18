@@ -67,7 +67,10 @@ def _setup(context):
             package="so101_perception",
             executable="object_classifier",
             name="object_classifier",
-            parameters=[{"config_file": objects_hsv}],
+            # Load the YAML as parameters (topics + thresholds) AND pass the
+            # path again so the classifier's internal loader can read the
+            # `classes:` list — the loader doesn't go through the param API.
+            parameters=[objects_hsv, {"config_file": objects_hsv}],
             output="screen",
             emulate_tty=True,
         ))

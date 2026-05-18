@@ -27,7 +27,7 @@ sort_by_class:
     # ── Stability gates ───────────────────────────────────────────────────
     object_samples_required: 10
     object_stability_radius_m: 0.01
-    object_detection_timeout_s: 30.0
+    object_detection_timeout_s: 300.0
 
     zone_samples_required: 5
     zone_stability_radius_m: 0.02
@@ -39,6 +39,10 @@ sort_by_class:
     label_point_window_s: 0.15
 
     # ── Pick geometry (relative to the object centroid) ───────────────────
+    # Small offsets to nudge the grasp away from systematic camera bias.
+    # Positive X pushes the target *forward* (away from the arm base).
+    pick_x_offset_m:    0.0
+    pick_y_offset_m:    0.0
     pick_z_offset_m:    0.0    # add to centroid Z when commanding the pick pose
     approach_height_m:  0.05   # how far above the pick pose to approach from
     # Match approach_height so the LIN retreat ends exactly where the approach

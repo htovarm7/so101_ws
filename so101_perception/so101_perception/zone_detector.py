@@ -330,7 +330,9 @@ class ZoneDetector(Node):
     def _point_in_target_frame(self, stamp, X: float, Y: float, Z: float
                                ) -> Optional[PointStamped]:
         cam_pt = PointStamped()
-        cam_pt.header.stamp = stamp
+        # Zero time = "latest available" — avoids extrapolation errors when the
+        # robot's joint_states TF chain lags behind the camera frame stamp.
+        cam_pt.header.stamp = rclpy.time.Time().to_msg()
         cam_pt.header.frame_id = self._camera_frame
         cam_pt.point.x = float(X)
         cam_pt.point.y = float(Y)
@@ -338,7 +340,7 @@ class ZoneDetector(Node):
         try:
             return self._tf_buffer.transform(
                 cam_pt, self._target_frame,
-                timeout=RclDuration(seconds=0.1),
+                timeout=RclDuration(seconds=0.2),
             )
         except (tf2_ros.LookupException,
                 tf2_ros.ExtrapolationException,
