@@ -453,6 +453,14 @@ def run_pick_cycle(robot, arm, gripper, ompl, pilz_lin,
         )
 
     # ── 3) PICK ──────────────────────────────────────────────────────────
+    # DEBUG: dump the values that go into the pick math so we can see where
+    # any unexpected offset is coming from.
+    logger.info(
+        f"DEBUG cfg:  pick_x={cfg.pick_x}  pick_y={cfg.pick_y}  "
+        f"pick_z={cfg.pick_z}  approach={cfg.approach}  retreat={cfg.retreat}"
+    )
+    logger.info(f"DEBUG obj_xyz = {obj_xyz}")
+
     pick_xyz = obj_xyz.copy()
     pick_xyz[0] += cfg.pick_x
     pick_xyz[1] += cfg.pick_y
@@ -461,6 +469,11 @@ def run_pick_cycle(robot, arm, gripper, ompl, pilz_lin,
     approach_xyz[2] = pick_xyz[2] + cfg.approach
     retreat_xyz = pick_xyz.copy()
     retreat_xyz[2] = pick_xyz[2] + cfg.retreat
+
+    logger.info(
+        f"DEBUG pick_xyz={pick_xyz}  approach_xyz={approach_xyz}  "
+        f"retreat_xyz={retreat_xyz}"
+    )
 
     if not set_gripper(robot, gripper, logger, "open"):
         return False
