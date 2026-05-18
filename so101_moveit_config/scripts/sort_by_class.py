@@ -36,6 +36,8 @@ from rclpy.node import Node
 from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
 from std_msgs.msg import String
 from tf_transformations import quaternion_from_euler
+from moveit.core.robot_state import RobotState
+from moveit.planning import MoveItPy, MultiPipelinePlanRequestParameters
 
 
 def _spin_node_in_thread(node: Node) -> tuple[threading.Thread, SingleThreadedExecutor]:
@@ -286,7 +288,6 @@ def plan_and_execute(
 def solve_ik_and_plan(
     robot, arm, logger, pose: Pose, plan_params, ik_timeout: float = 0.2
 ) -> bool:
-    from moveit.core.robot_state import RobotState
 
     robot_model = robot.get_robot_model()
     robot_state = RobotState(robot_model)
@@ -316,6 +317,22 @@ def plan_linear_cartesian(
 def goto_named_state(robot, arm, logger, name: str, plan_params) -> bool:
     arm.set_start_state_to_current_state()
     arm.set_goal_state(configuration_name=name)
+    return plan_and_execute(robot, arm, logger, multi_plan_parameters=plan_params)
+
+
+def goto_modified_joint(
+    robot, arm, logger, joint_idx: int, angle_rad: float, plan_params
+) -> bool:
+
+    robot_model = robot.get_robot_model()
+    robot_state = RobotState(robot_model)
+    with robot.get_planning_scene_monitor().read_only() as scene:
+        positions = list(scene.current_state.get_joint_group_positions(ARM_GROUP))
+    positions[joint_idx] = angle_rad
+    robot_state.set_joint_group_positions(ARM_GROUP, positions)
+    robot_state.update()
+    arm.set_start_state_to_current_state()
+    arm.set_goal_state(robot_state=robot_state)
     return plan_and_execute(robot, arm, logger, multi_plan_parameters=plan_params)
 
 
@@ -464,7 +481,6 @@ def main() -> None:
 
         # ── MoveItPy ─────────────────────────────────────────────────────
         logger.info("Creating MoveItPy…")
-        from moveit.planning import MoveItPy, MultiPipelinePlanRequestParameters
 
         robot = MoveItPy(
             node_name="moveit_py_sort",
@@ -476,16 +492,34 @@ def main() -> None:
         ompl = MultiPipelinePlanRequestParameters(robot, ["ompl_rrtc"])
         pilz_lin = MultiPipelinePlanRequestParameters(robot, ["pilz_lin"])
 
-        # Detect and save zone before picking
-        zone_xyz_prepick = detect_zone(
-            zone_topic,
-            cfg.zone_samples,
-            cfg.zone_radius,
-            cfg.zone_timeout,
-            zone_name,
-            logger,
-        )
+        # ── 2) Sweeping scan to locate the destination zone ──────────────────
+        SWEEP_STEPS = 5
+        SWEEP_TIMEOUT_S = 3.0  # timeout per-step
+
+        logger.info(f"── Going to '{SCAN_STATE}' for zone sweep ──")
+        if not goto_named_state(robot, arm, logger, SCAN_STATE, ompl):
+            os._exit(1)
+        time.sleep(0.5)
+
+        zone_xyz_prepick: Optional[np.ndarray] = None
+        for angle in np.linspace(-np.pi / 2, np.pi / 2, SWEEP_STEPS):
+            logger.info(f"── Sweep: joint_0 -> {np.degrees(angle):.1f}° ──")
+            goto_modified_joint(robot, arm, logger, 0, float(angle), ompl)
+            time.sleep(0.5)
+            zone_xyz_prepick = detect_zone(
+                zone_topic,
+                cfg.zone_samples,
+                cfg.zone_radius,
+                SWEEP_TIMEOUT_S,
+                zone_name,
+                logger,
+            )
+            if zone_xyz_prepick is not None:
+                logger.info("Zone found during sweep — stopping early")
+                break
+
         if zone_xyz_prepick is None:
+            logger.error(f"Zone '{zone_name}' not found after sweep — aborting.")
             os._exit(1)
 
         # ── 3) PICK ──────────────────────────────────────────────────────
