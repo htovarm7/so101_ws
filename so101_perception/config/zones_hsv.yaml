@@ -38,14 +38,12 @@ zone_detector:
 
     # ── ZONE A — PINK ─────────────────────────────────────────────────────────
     zone_a:
-      hsv_lower: [140, 50, 50]
-      hsv_upper: [170, 255, 255]
-      # ~US-letter sheet seen from ~50 cm is several thousand pixels;
-      # raise this to ignore stray pink in the background.
-      min_contour_area: 5000
+      hsv_lower: [128, 158, 42]
+      hsv_upper: [176, 221, 243]
+      min_contour_area: 88
 
     # ── ZONE B — ORANGE ───────────────────────────────────────────────────────
     zone_b:
-      hsv_lower: [5, 100, 100]
-      hsv_upper: [20, 255, 255]
-      min_contour_area: 5000
+      hsv_lower: [0, 127, 215]
+      hsv_upper: [99, 198, 255]
+      min_contour_area: 255
