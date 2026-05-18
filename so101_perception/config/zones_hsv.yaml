@@ -15,10 +15,10 @@ zone_detector:
     mount_x:   0.0
     mount_y:   0.0
     mount_z:  -0.227
-    mount_qx: -0.7071
-    mount_qy:  0.0
-    mount_qz:  0.0
-    mount_qw: -0.7071
+    mount_qx: -0.5
+    mount_qy:  0.5
+    mount_qz: -0.5
+    mount_qw: -0.5
 
     target_frame: "base_link"
 
