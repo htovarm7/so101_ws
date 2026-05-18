@@ -86,6 +86,13 @@ class ObjectClassifier(Node):
         self.declare_parameter("marker_lifetime_s", 1.0)
         self.declare_parameter("none_label", "none")
 
+        self.declare_parameter("detection_hold_frames", 10)
+        self._hold_frames = int(self.get_parameter("detection_hold_frames").value)
+        self._last_idx: int = -1
+        self._last_contour = None
+        self._last_centroid = None
+        self._frames_since_detection = 9999
+
         self.declare_parameter("config_file", "")
         cfg_path = self.get_parameter("config_file").value or self._default_config_path()
         classes_raw = self._load_classes_from_yaml(cfg_path)
@@ -299,6 +306,17 @@ class ObjectClassifier(Node):
 
         hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV)
         idx, contour, area, centroid = self._detect_best(hsv)
+        if idx >= 0:
+            self._last_idx = idx
+            self._last_contour = contour
+            self._last_centroid = centroid
+            self._frames_since_detection = 0
+        else:
+            self._frames_since_detection += 1
+            if self._frames_since_detection <= self._hold_frames and self._last_idx >= 0:
+                idx = self._last_idx
+                contour = self._last_contour
+                centroid = self._last_centroid
         label = self._classes[idx].label if idx >= 0 else self._none_label
         self._label_pub.publish(String(data=label))
 
