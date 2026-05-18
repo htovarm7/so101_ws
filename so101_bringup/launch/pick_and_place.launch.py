@@ -109,6 +109,9 @@ def _setup(context):
         .moveit_cpp(
             file_path=os.path.join(pkg_moveit_cfg, "config", "moveit_py_config.yaml")
         )
+        .sensors_3d(
+            file_path=os.path.join(pkg_moveit_cfg, "config", "sensors_3d.yaml")
+        )
         .to_moveit_configs()
     )
 
