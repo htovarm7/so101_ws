@@ -7,6 +7,7 @@ colour+depth frame it finds the largest contour matching any enabled class, esti
 """
 
 import os
+import time
 from typing import Dict, List, Optional, Tuple
 
 import cv2
@@ -24,7 +25,7 @@ from cv_bridge import CvBridge
 import tf2_ros
 import tf2_geometry_msgs 
 
-from geometry_msgs.msg import PointStamped, TransformStamped
+from geometry_msgs.msg import PointStamped, PoseStamped, TransformStamped
 from sensor_msgs.msg import Image, CameraInfo
 from std_msgs.msg import String
 from visualization_msgs.msg import Marker
@@ -89,8 +90,6 @@ class ObjectClassifier(Node):
         self.declare_parameter("detection_hold_frames", 10)
         self._hold_frames = int(self.get_parameter("detection_hold_frames").value)
         self._last_idx: int = -1
-        self._last_contour = None
-        self._last_centroid = None
         self._frames_since_detection = 9999
 
         self.declare_parameter("config_file", "")
@@ -127,6 +126,28 @@ class ObjectClassifier(Node):
         self._static_broadcaster = tf2_ros.StaticTransformBroadcaster(self)
         self._tf_buffer   = tf2_ros.Buffer()
         self._tf_listener = tf2_ros.TransformListener(self._tf_buffer, self)
+
+        # ── ArUco-anchored camera localisation (optional override) ─────
+        # When `/camera_pose_in_base` arrives with a fresh timestamp we
+        # bypass the URDF/TF chain entirely and transform deprojected
+        # points using the camera pose derived from the fiducial.  This
+        # eliminates FK/backlash/mount-calibration error on every frame
+        # the marker is in view.  Falls back to TF when marker is lost.
+        self.declare_parameter("aruco_pose_topic", "/camera_pose_in_base")
+        # Cache the last good ArUco-derived camera pose for this long
+        # before falling back to the TF/URDF chain.  Generous default —
+        # the marker can be briefly occluded by the gripper without
+        # making the published detection jitter.
+        self.declare_parameter("aruco_freshness_s", 5.0)
+        self._aruco_freshness = float(self.get_parameter("aruco_freshness_s").value)
+        self._aruco_T_b2c: Optional[np.ndarray] = None  # 4x4
+        self._aruco_T_b2c_t: float = 0.0
+        self.create_subscription(
+            PoseStamped,
+            self.get_parameter("aruco_pose_topic").value,
+            self._on_aruco_pose,
+            10,
+        )
 
         sensor_qos = QoSProfile(
             reliability=ReliabilityPolicy.RELIABLE,
@@ -306,18 +327,27 @@ class ObjectClassifier(Node):
 
         hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV)
         idx, contour, area, centroid = self._detect_best(hsv)
+
+        # Hold the LABEL across short detection gaps so downstream
+        # label-binding doesn't flicker.  Do NOT hold the 3-D point —
+        # republishing a stale centroid against fresh depth produces
+        # phantom positions on whatever surface is now under that pixel.
         if idx >= 0:
             self._last_idx = idx
-            self._last_contour = contour
-            self._last_centroid = centroid
             self._frames_since_detection = 0
+            held_label_idx = idx
         else:
             self._frames_since_detection += 1
-            if self._frames_since_detection <= self._hold_frames and self._last_idx >= 0:
-                idx = self._last_idx
-                contour = self._last_contour
-                centroid = self._last_centroid
-        label = self._classes[idx].label if idx >= 0 else self._none_label
+            held_label_idx = (
+                self._last_idx
+                if self._frames_since_detection <= self._hold_frames
+                else -1
+            )
+
+        label = (
+            self._classes[held_label_idx].label
+            if held_label_idx >= 0 else self._none_label
+        )
         self._label_pub.publish(String(data=label))
 
         debug = bgr.copy()
@@ -363,7 +393,60 @@ class ObjectClassifier(Node):
             return None
         return float(np.median(patch) * self._depth_scale)
 
+    def _on_aruco_pose(self, msg: PoseStamped) -> None:
+        """Cache the camera pose in base_link reported by aruco_localizer.
+
+        Stores a 4x4 T_base_to_cam matrix plus a wall-clock timestamp so
+        ``_publish_point`` can decide if the pose is still fresh enough
+        to use as the canonical transform.
+        """
+        p = msg.pose.position
+        q = msg.pose.orientation
+        # Quaternion (xyzw) → 3x3 rotation
+        n = q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w
+        s = 0.0 if n < 1e-12 else 2.0 / n
+        xx, yy, zz = q.x * q.x * s, q.y * q.y * s, q.z * q.z * s
+        xy, xz, yz = q.x * q.y * s, q.x * q.z * s, q.y * q.z * s
+        wx, wy, wz = q.w * q.x * s, q.w * q.y * s, q.w * q.z * s
+        R = np.array([
+            [1.0 - (yy + zz), xy - wz, xz + wy],
+            [xy + wz, 1.0 - (xx + zz), yz - wx],
+            [xz - wy, yz + wx, 1.0 - (xx + yy)],
+        ], dtype=float)
+        T = np.eye(4)
+        T[:3, :3] = R
+        T[:3, 3] = [p.x, p.y, p.z]
+        self._aruco_T_b2c = T
+        self._aruco_T_b2c_t = time.time()
+
     def _publish_point(self, stamp, X: float, Y: float, Z: float, label: str) -> None:
+        # ── Preferred path: ArUco-anchored camera pose ─────────────────
+        # When the fiducial localiser has reported a fresh camera-in-base
+        # pose, multiply (X, Y, Z) in camera frame by it directly.  This
+        # bypasses TF / FK / mount-calibration error entirely.
+        now = time.time()
+        if (self._aruco_T_b2c is not None
+                and now - self._aruco_T_b2c_t <= self._aruco_freshness):
+            p_cam = np.array([float(X), float(Y), float(Z), 1.0], dtype=float)
+            p_base = self._aruco_T_b2c @ p_cam
+            tgt_pt = PointStamped()
+            tgt_pt.header.stamp = stamp
+            tgt_pt.header.frame_id = self._target_frame
+            tgt_pt.point.x = float(p_base[0])
+            tgt_pt.point.y = float(p_base[1])
+            tgt_pt.point.z = float(p_base[2])
+            self._point_pub.publish(tgt_pt)
+            self._publish_marker(tgt_pt.header, tgt_pt.point.x,
+                                 tgt_pt.point.y, tgt_pt.point.z, label)
+            self.get_logger().info(
+                f"[{label}] cam=({X:+.3f}, {Y:+.3f}, {Z:+.3f}) "
+                f"base=({p_base[0]:+.3f}, {p_base[1]:+.3f}, {p_base[2]:+.3f}) "
+                f"[aruco]",
+                throttle_duration_sec=0.3,
+            )
+            return
+
+        # ── Fallback: classical TF chain (URDF + mount calibration) ────
         cam_pt = PointStamped()
         # Use zero time = "latest available" to avoid extrapolation errors when
         # the robot's joint_states TF chain lags behind the camera frame stamp.
@@ -392,22 +475,21 @@ class ObjectClassifier(Node):
         # can correlate this point with the label message via timestamp.
         tgt_pt.header.stamp = stamp
         self._point_pub.publish(tgt_pt)
-        # self.get_logger().info(
-        #     f"{label}: base=({tgt_pt.point.x:+.3f},"
-        #     f"{tgt_pt.point.y:+.3f},{tgt_pt.point.z:+.3f}) "
-        #     f"cam=({X:+.3f},{Y:+.3f},{Z:+.3f})",
-        #     throttle_duration_sec=1.0,
-        # )
+        self._publish_marker(tgt_pt.header, tgt_pt.point.x,
+                             tgt_pt.point.y, tgt_pt.point.z, label)
 
+    def _publish_marker(self, header, x: float, y: float, z: float,
+                        label: str) -> None:
+        """Emit the RViz sphere marker at (x, y, z) in `header.frame_id`."""
         m = Marker()
-        m.header = tgt_pt.header
+        m.header = header
         m.ns = "object_classifier"
         m.id = 0
         m.type = Marker.SPHERE
         m.action = Marker.ADD
-        m.pose.position.x = tgt_pt.point.x
-        m.pose.position.y = tgt_pt.point.y
-        m.pose.position.z = tgt_pt.point.z
+        m.pose.position.x = float(x)
+        m.pose.position.y = float(y)
+        m.pose.position.z = float(z)
         m.pose.orientation.w = 1.0
         m.scale.x = m.scale.y = m.scale.z = 0.04
         idx = next((i for i, s in enumerate(self._classes) if s.label == label), 0)

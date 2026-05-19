@@ -94,6 +94,18 @@ def _launch_setup(context, *args, **kwargs):
     if use_perception.lower() == "true":
         objects_hsv = os.path.join(pkg_perception, "config", "objects_hsv.yaml")
         zones_hsv = os.path.join(pkg_perception, "config", "zones_hsv.yaml")
+        aruco_cfg  = os.path.join(pkg_perception, "config", "aruco.yaml")
+        # ArUco-anchored camera localiser publishes /camera_pose_in_base
+        # whenever the marker is in view.  object_classifier consumes that
+        # topic and bypasses the URDF/TF chain on every fresh frame.
+        actions.append(Node(
+            package="so101_perception",
+            executable="aruco_localizer",
+            name="aruco_localizer",
+            parameters=[aruco_cfg],
+            output="screen",
+            emulate_tty=True,
+        ))
         actions.append(Node(
             package="so101_perception",
             executable="object_classifier",
@@ -139,11 +151,23 @@ def _launch_setup(context, *args, **kwargs):
     )
     actions.append(cartesian)
 
-    # ── Servo-backed orchestrator (replaces MoveItPy sort_by_class) ────────
-    use_orchestrator = LaunchConfiguration("use_orchestrator").perform(context)
-    if use_orchestrator.lower() == "true":
-        pkg_moveit_cfg = get_package_share_directory("so101_moveit_config")
-        pick_place_cfg = os.path.join(pkg_moveit_cfg, "config", "pick_and_place.yaml")
+    # ── Orchestrator selector ──────────────────────────────────────────────
+    # `orchestrator`: "track_and_pick" (visual servoing, recommended),
+    #                 "sort_by_class" (plan-once / Placo IK),
+    #                 "none" (only hardware + perception + Placo, drive manually)
+    orchestrator = LaunchConfiguration("orchestrator").perform(context)
+    pkg_moveit_cfg = get_package_share_directory("so101_moveit_config")
+    pick_place_cfg = os.path.join(pkg_moveit_cfg, "config", "pick_and_place.yaml")
+    if orchestrator == "track_and_pick":
+        actions.append(Node(
+            name="track_and_pick",
+            package="so101_moveit_config",
+            executable="track_and_pick.py",
+            output="screen",
+            emulate_tty=True,
+            parameters=[pick_place_cfg],
+        ))
+    elif orchestrator == "sort_by_class":
         actions.append(Node(
             name="sort_by_class",
             package="so101_moveit_config",
@@ -152,6 +176,13 @@ def _launch_setup(context, *args, **kwargs):
             emulate_tty=True,
             parameters=[pick_place_cfg],
         ))
+    elif orchestrator == "none":
+        pass
+    else:
+        raise RuntimeError(
+            f"Unknown orchestrator '{orchestrator}'.  "
+            f"Use track_and_pick | sort_by_class | none."
+        )
 
     return actions
 
@@ -164,7 +195,8 @@ def generate_launch_description():
         DeclareLaunchArgument("joint_config_file", default_value="/calibration/papu.json"),
         DeclareLaunchArgument("use_cameras", default_value="true"),
         DeclareLaunchArgument("use_perception", default_value="true"),
-        DeclareLaunchArgument("use_orchestrator", default_value="true"),
+        DeclareLaunchArgument("orchestrator", default_value="track_and_pick",
+                              description="track_and_pick | sort_by_class | none"),
         DeclareLaunchArgument("use_rviz", default_value="true"),
         OpaqueFunction(function=_launch_setup),
     ])

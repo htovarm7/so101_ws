@@ -27,6 +27,7 @@ setup(
             "object_classifier    = so101_perception.object_classifier:main",
             "zone_detector        = so101_perception.zone_detector:main",
             "mount_calibrator     = so101_perception.mount_calibrator:main",
+            "aruco_localizer      = so101_perception.aruco_localizer:main",
         ],
     },
 )

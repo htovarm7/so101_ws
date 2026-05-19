@@ -17,11 +17,11 @@ object_classifier:
     parent_link: "moving_jaw_so101_v1_link"
     mount_x:   0.0
     mount_y:   0.0
-    mount_z:  0.0
-    mount_qx: -0.5
-    mount_qy:  0.5
-    mount_qz: -0.5
-    mount_qw: -0.5
+    mount_z:  -0.02          # ← era 0.0, URDF dice -0.02
+    mount_qx:  0.5
+    mount_qy: -0.5           # ← era +0.5
+    mount_qz:  0.5           # ← era -0.5
+    mount_qw:  0.5 
 
     target_frame: "base_link"
 
@@ -46,30 +46,30 @@ object_classifier:
     - label: red_heart_bear
       hsv_lower: [147, 117, 26]
       hsv_upper: [9, 255, 138]
-      min_contour_area: 200
+      min_contour_area: 500
       enabled: true
     - label: blue_dragon
       hsv_lower: [63, 126, 150]
       hsv_upper: [165, 255, 255]
-      min_contour_area: 200
+      min_contour_area: 500
       enabled: true
     - label: purple_cocodrile
       hsv_lower: [109, 40, 96]
       hsv_upper: [143, 207, 168]
-      min_contour_area: 200
+      min_contour_area: 500
       enabled: true
     - label: banana
       hsv_lower: [0, 66, 136]
       hsv_upper: [81, 200, 233]
-      min_contour_area: 200
+      min_contour_area: 500
       enabled: true
     - label: green_platypus
       hsv_lower: [70, 112, 30]
       hsv_upper: [95, 255, 149]
-      min_contour_area: 200
+      min_contour_area: 500
       enabled: true
     - label: object_6
       enabled: false
       hsv_lower: [0, 0, 0]
       hsv_upper: [179, 255, 255]
-      min_contour_area: 200
+      min_contour_area: 500

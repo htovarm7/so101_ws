@@ -43,8 +43,12 @@ sort_by_class:
     # Positive X pushes the target *forward* (away from the arm base).
     pick_x_offset_m:    0.0
     pick_y_offset_m:    0.0
-    pick_z_offset_m:    0.0    # add to centroid Z when commanding the pick pose
-    approach_height_m:  0.02   # how far above the pick pose to approach from
+    pick_z_offset_m:    -0.07    # depth of the final grasp (only applied at descent)
+    # Hover height during tracking AND the approach pose above the pick.
+    # Should clear the object's top — the bear is ~11 cm tall, so 0.10 m
+    # of clearance over the centroid (which sits ~5–6 cm above the table)
+    # is a safe default.
+    approach_height_m:  0.10
     # Match approach_height so the LIN retreat ends exactly where the approach
     # started — that pose is already IK-validated.  Raising it further can
     # cross an IK singularity on the 5-DOF SO-101.
@@ -65,3 +69,36 @@ sort_by_class:
     # Set back to [0.0, 0.0, 0.0] to use perception again.
     # Known-reachable: x=0.20 m radial, y=0, z=0.05 m above base_link.
     test_pick_xyz: [0.0, 0.0, 0.0]
+
+    # ── track_and_pick (visual-servoing orchestrator) ───────────────────
+    # Pickable workspace in base_link.  Detections outside this annulus
+    # are tracked (gripper hovers above them) but a pick is never
+    # triggered.  Tune to your physical reachable envelope.
+    pick_zone_radius_min_m: 0.10
+    pick_zone_radius_max_m: 0.27
+    pick_zone_z_min_m:     -0.05
+    pick_zone_z_max_m:      0.20
+    # Object must stay within `stability_radius_m` for `stability_seconds`
+    # before track_and_pick advances from TRACKING to PICK.
+    stability_radius_m:  0.01
+    stability_seconds:   1.5
+    # Servo loop rate and time budgets for the pick sub-states.
+    servo_rate_hz:       30.0
+    descend_time_s:      1.5
+    retreat_time_s:      1.5
+    settle_time_s:       0.5
+    detection_freshness_s: 0.5
+    # If the detection drops for this long while tracking, abandon the
+    # pursuit and return to scan_pose.  Prevents the arm from holding
+    # its last hover pose forever when the object disappears.
+    lost_detection_timeout_s: 3.0
+    # Tracking smoothness — applied to the published servo target.
+    # tracking_lpf_alpha: exponential-moving-average coefficient.
+    #   0.05 = very slow / very smooth, 1.0 = no filter.
+    # tracking_max_speed_m_per_s: hard cap on how fast the reference
+    #   slews toward a fresh detection (independent from Placo's joint
+    #   speed limits, which still bound the *actual* arm motion).
+    tracking_lpf_alpha:           0.05
+    tracking_max_speed_m_per_s:   0.05
+    # Which labels to track (empty list => any label except "none").
+    accept_labels: ["red_heart_bear", "blue_dragon"]
