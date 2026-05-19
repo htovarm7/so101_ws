@@ -34,6 +34,46 @@ from builtin_interfaces.msg import Duration
 from message_filters import ApproximateTimeSynchronizer, Subscriber
 
 
+def _quat_to_rotmat(qx: float, qy: float, qz: float, qw: float) -> np.ndarray:
+    n = qx * qx + qy * qy + qz * qz + qw * qw
+    s = 0.0 if n < 1e-12 else 2.0 / n
+    xx, yy, zz = qx * qx * s, qy * qy * s, qz * qz * s
+    xy, xz, yz = qx * qy * s, qx * qz * s, qy * qz * s
+    wx, wy, wz = qw * qx * s, qw * qy * s, qw * qz * s
+    return np.array([
+        [1.0 - (yy + zz), xy - wz, xz + wy],
+        [xy + wz, 1.0 - (xx + zz), yz - wx],
+        [xz - wy, yz + wx, 1.0 - (xx + yy)],
+    ], dtype=float)
+
+
+def _rotmat_to_quat(R: np.ndarray) -> Tuple[float, float, float, float]:
+    tr = float(R[0, 0] + R[1, 1] + R[2, 2])
+    if tr > 0:
+        s = 2.0 * (1.0 + tr) ** 0.5
+        return (float((R[2, 1] - R[1, 2]) / s),
+                float((R[0, 2] - R[2, 0]) / s),
+                float((R[1, 0] - R[0, 1]) / s),
+                float(0.25 * s))
+    if R[0, 0] > R[1, 1] and R[0, 0] > R[2, 2]:
+        s = 2.0 * (1.0 + R[0, 0] - R[1, 1] - R[2, 2]) ** 0.5
+        return (float(0.25 * s),
+                float((R[0, 1] + R[1, 0]) / s),
+                float((R[0, 2] + R[2, 0]) / s),
+                float((R[2, 1] - R[1, 2]) / s))
+    if R[1, 1] > R[2, 2]:
+        s = 2.0 * (1.0 + R[1, 1] - R[0, 0] - R[2, 2]) ** 0.5
+        return (float((R[0, 1] + R[1, 0]) / s),
+                float(0.25 * s),
+                float((R[1, 2] + R[2, 1]) / s),
+                float((R[0, 2] - R[2, 0]) / s))
+    s = 2.0 * (1.0 + R[2, 2] - R[0, 0] - R[1, 1]) ** 0.5
+    return (float((R[0, 2] + R[2, 0]) / s),
+            float((R[1, 2] + R[2, 1]) / s),
+            float(0.25 * s),
+            float((R[1, 0] - R[0, 1]) / s))
+
+
 # Distinct BGR colours for the debug overlay
 DEBUG_COLOURS: List[Tuple[int, int, int]] = [
     (0,   0, 255),   # red
@@ -123,9 +163,21 @@ class ObjectClassifier(Node):
         self._camera_frame: str = "camera_color_optical_frame"
         self._bridge = CvBridge()
 
-        self._static_broadcaster = tf2_ros.StaticTransformBroadcaster(self)
+        # Dynamic (not static) so we can REPLACE the seed jaw→cam values
+        # with a fresh transform learned from ArUco.  The mount is
+        # physically constant, but the YAML seed is approximate — every
+        # fresh ArUco solve refines it, and the refined value is then
+        # used by the TF-fallback path when the marker goes out of view.
+        self._tf_broadcaster = tf2_ros.TransformBroadcaster(self)
         self._tf_buffer   = tf2_ros.Buffer()
         self._tf_listener = tf2_ros.TransformListener(self._tf_buffer, self)
+        # Latest jaw→cam transform.  Seeded from YAML params; overwritten
+        # by every successful ArUco solve via _learn_mount_from_aruco.
+        self._mount_T_jaw_to_cam = self._build_seed_mount_matrix()
+        # Broadcast at 30 Hz so the TF stays alive in tf2's cache even
+        # when ArUco has been lost for several seconds (default cache
+        # window is 10 s otherwise).
+        self.create_timer(1.0 / 30.0, self._broadcast_mount_tf)
 
         # ── ArUco-anchored camera localisation (optional override) ─────
         # When `/camera_pose_in_base` arrives with a fresh timestamp we
@@ -230,24 +282,64 @@ class ObjectClassifier(Node):
         )
         return []
 
-    # TF bridge
+    # TF bridge — auto-calibrating mount
 
-    def _publish_camera_tf(self) -> None:
-        tf = TransformStamped()
-        tf.header.stamp = self.get_clock().now().to_msg()
-        tf.header.frame_id = self._parent_link
-        tf.child_frame_id  = self._camera_frame
-        tf.transform.translation.x = float(self._mount["x"])
-        tf.transform.translation.y = float(self._mount["y"])
-        tf.transform.translation.z = float(self._mount["z"])
-        tf.transform.rotation.x    = float(self._mount["qx"])
-        tf.transform.rotation.y    = float(self._mount["qy"])
-        tf.transform.rotation.z    = float(self._mount["qz"])
-        tf.transform.rotation.w    = float(self._mount["qw"])
-        self._static_broadcaster.sendTransform(tf)
-        self.get_logger().info(
-            f"Static TF broadcast: {self._parent_link} -> {self._camera_frame}"
-        )
+    def _build_seed_mount_matrix(self) -> np.ndarray:
+        """4x4 jaw→cam transform built from YAML mount_x/y/z + mount_q*.
+
+        Used as the initial value until ArUco refines it.  The seed may
+        be inaccurate; that's the whole point of relearning it from the
+        fiducial.
+        """
+        m = self._mount
+        T = np.eye(4)
+        T[:3, :3] = _quat_to_rotmat(m["qx"], m["qy"], m["qz"], m["qw"])
+        T[:3, 3] = [m["x"], m["y"], m["z"]]
+        return T
+
+    def _broadcast_mount_tf(self) -> None:
+        """30 Hz dynamic broadcast of the latest jaw→cam transform."""
+        T = self._mount_T_jaw_to_cam
+        msg = TransformStamped()
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.header.frame_id = self._parent_link
+        msg.child_frame_id  = self._camera_frame
+        msg.transform.translation.x = float(T[0, 3])
+        msg.transform.translation.y = float(T[1, 3])
+        msg.transform.translation.z = float(T[2, 3])
+        qx, qy, qz, qw = _rotmat_to_quat(T[:3, :3])
+        msg.transform.rotation.x = qx
+        msg.transform.rotation.y = qy
+        msg.transform.rotation.z = qz
+        msg.transform.rotation.w = qw
+        self._tf_broadcaster.sendTransform(msg)
+
+    def _learn_mount_from_aruco(self) -> None:
+        """Refine jaw→cam from the latest ArUco T_base_from_cam.
+
+        Composition: T_jaw_from_cam = inv(T_base_from_jaw_FK) @ T_base_from_cam_ArUco.
+        The mount is physically rigid, so a value learned now remains
+        valid after the marker disappears.  Skips silently if joint_states
+        TF isn't ready yet.
+        """
+        if self._aruco_T_b2c is None:
+            return
+        try:
+            ts = self._tf_buffer.lookup_transform(
+                self._target_frame, self._parent_link,
+                rclpy.time.Time(),
+                timeout=RclDuration(seconds=0.05),
+            )
+        except (tf2_ros.LookupException,
+                tf2_ros.ExtrapolationException,
+                tf2_ros.ConnectivityException):
+            return
+        t = ts.transform.translation
+        q = ts.transform.rotation
+        T_b2j = np.eye(4)
+        T_b2j[:3, :3] = _quat_to_rotmat(q.x, q.y, q.z, q.w)
+        T_b2j[:3, 3] = [t.x, t.y, t.z]
+        self._mount_T_jaw_to_cam = np.linalg.inv(T_b2j) @ self._aruco_T_b2c
 
     # Camera intrinsics
 
@@ -263,7 +355,6 @@ class ObjectClassifier(Node):
             f"CameraInfo: fx={self._fx:.1f} fy={self._fy:.1f} "
             f"cx={self._cx:.1f} cy={self._cy:.1f} frame={self._camera_frame}"
         )
-        self._publish_camera_tf()
 
     # Main pipeline
     def _detect_best(self, hsv: np.ndarray):
@@ -402,22 +493,15 @@ class ObjectClassifier(Node):
         """
         p = msg.pose.position
         q = msg.pose.orientation
-        # Quaternion (xyzw) → 3x3 rotation
-        n = q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w
-        s = 0.0 if n < 1e-12 else 2.0 / n
-        xx, yy, zz = q.x * q.x * s, q.y * q.y * s, q.z * q.z * s
-        xy, xz, yz = q.x * q.y * s, q.x * q.z * s, q.y * q.z * s
-        wx, wy, wz = q.w * q.x * s, q.w * q.y * s, q.w * q.z * s
-        R = np.array([
-            [1.0 - (yy + zz), xy - wz, xz + wy],
-            [xy + wz, 1.0 - (xx + zz), yz - wx],
-            [xz - wy, yz + wx, 1.0 - (xx + yy)],
-        ], dtype=float)
         T = np.eye(4)
-        T[:3, :3] = R
+        T[:3, :3] = _quat_to_rotmat(q.x, q.y, q.z, q.w)
         T[:3, 3] = [p.x, p.y, p.z]
         self._aruco_T_b2c = T
         self._aruco_T_b2c_t = time.time()
+        # Refine the wrist→camera mount transform.  The mount is rigid,
+        # so this value stays valid after the marker goes out of view —
+        # which is exactly when the TF-fallback path needs it.
+        self._learn_mount_from_aruco()
 
     def _publish_point(self, stamp, X: float, Y: float, Z: float, label: str) -> None:
         # ── Preferred path: ArUco-anchored camera pose ─────────────────
