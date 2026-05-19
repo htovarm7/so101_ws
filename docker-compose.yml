@@ -114,6 +114,11 @@ services:
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - ./papu_ros2.json:/calibration/papu.json:ro
+      # Mount config files so they can be tuned without a docker rebuild.
+      # Edit the host file, restart the service, and the new values are used.
+      - ./so101_moveit_config/config/pick_and_place.yaml:/ros2_ws/install/so101_moveit_config/share/so101_moveit_config/config/pick_and_place.yaml:ro
+      - ./so101_perception/config/objects_hsv.yaml:/ros2_ws/install/so101_perception/share/so101_perception/config/objects_hsv.yaml:ro
+      - ./so101_perception/config/zones_hsv.yaml:/ros2_ws/install/so101_perception/share/so101_perception/config/zones_hsv.yaml:ro
     devices:
       - /dev/ttyACM0:/dev/ttyACM0
     group_add:
@@ -127,6 +132,45 @@ services:
         usb_port:=/dev/ttyACM0
         joint_config_file:=/calibration/papu.json
         use_rviz:=true
+
+  # ── Pick-and-place: Placo IK + visual-servoing variant ─────────────────────
+  # Same hardware/perception, but the arm is driven by `cartesian_motion_node`
+  # (Placo backend, /go_to_pose service) instead of MoveIt's pick_ik plugin.
+  # arm_forward_controller is active so position commands stream at 50 Hz.
+  # docker compose run --rm pick-and-place-servo
+  pick-and-place-servo:
+    build:
+      context: .
+      dockerfile: Dockerfile.moveit
+    image: so101-moveit:latest
+    runtime: nvidia
+    environment:
+      - DISPLAY=${DISPLAY}
+      - QT_X11_NO_MITSHM=1
+      - QT_QPA_PLATFORM=xcb
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=graphics,utility,display,video,compute
+      - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+      - SO101_URDF_FILE=/ros2_ws/so101_follower_real.urdf
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ./papu_ros2.json:/calibration/papu.json:ro
+      - ./so101_moveit_config/config/pick_and_place.yaml:/ros2_ws/install/so101_moveit_config/share/so101_moveit_config/config/pick_and_place.yaml:ro
+      - ./so101_perception/config/objects_hsv.yaml:/ros2_ws/install/so101_perception/share/so101_perception/config/objects_hsv.yaml:ro
+      - ./so101_perception/config/zones_hsv.yaml:/ros2_ws/install/so101_perception/share/so101_perception/config/zones_hsv.yaml:ro
+      - ./so101_perception/config/aruco.yaml:/ros2_ws/install/so101_perception/share/so101_perception/config/aruco.yaml:ro
+    devices:
+      - /dev/ttyACM0:/dev/ttyACM0
+    group_add:
+      - dialout
+    network_mode: host
+    ipc: host
+    privileged: true
+    command: >
+      ros2 launch so101_bringup pick_and_place_servo.launch.py
+        hardware_type:=real
+        usb_port:=/dev/ttyACM0
+        joint_config_file:=/calibration/papu.json
 
   # ── Interactive shell inside the container ─────────────────────────────────
   # docker compose run --rm shell

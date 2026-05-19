@@ -1,0 +1,1 @@
+- [Commits sólo en autor del usuario](feedback_commits_solo_autor.md) — En este repo no añadir Co-Authored-By al hacer commit

@@ -13,6 +13,9 @@
     depth_height:  480
     depth_fps:     30
     align_depth.enable: true
-    publish_tf:    true
+    # Disable the driver's internal camera_link tree — it is not connected to
+    # base_link and conflicts with the static bridge published by
+    # object_classifier (moving_jaw_so101_v1_link -> camera_color_optical_frame).
+    publish_tf:    false
     tf_publish_rate: 0.0
     pointcloud.enable: false

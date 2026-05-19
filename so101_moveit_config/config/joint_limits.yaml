@@ -12,41 +12,41 @@ joint_limits:
     has_velocity_limits: true
     max_velocity: 6.28
     has_acceleration_limits: true
-    max_acceleration: 10.0
+    max_acceleration: 40.0
     has_deceleration_limits: true
-    max_deceleration: -10.0
+    max_deceleration: -40.0
   gripper:
     has_velocity_limits: true
     max_velocity: 6.28
     has_acceleration_limits: true
-    max_acceleration: 10.0
+    max_acceleration: 40.0
     has_deceleration_limits: true
-    max_deceleration: -10.0
+    max_deceleration: -40.0
   shoulder_lift:
     has_velocity_limits: true
     max_velocity: 6.28
     has_acceleration_limits: true
-    max_acceleration: 10.0
+    max_acceleration: 40.0
     has_deceleration_limits: true
-    max_deceleration: -10.0
+    max_deceleration: -40.0
   shoulder_pan:
     has_velocity_limits: true
     max_velocity: 6.28
     has_acceleration_limits: true
-    max_acceleration: 10.0
+    max_acceleration: 40.0
     has_deceleration_limits: true
-    max_deceleration: -10.0
+    max_deceleration: -40.0
   wrist_flex:
     has_velocity_limits: true
     max_velocity: 6.28
     has_acceleration_limits: true
-    max_acceleration: 10.0
+    max_acceleration: 40.0
     has_deceleration_limits: true
-    max_deceleration: -10.0
+    max_deceleration: -40.0
   wrist_roll:
     has_velocity_limits: true
     max_velocity: 6.28
     has_acceleration_limits: true
-    max_acceleration: 10.0
+    max_acceleration: 40.0
     has_deceleration_limits: true
-    max_deceleration: -10.0
+    max_deceleration: -40.0

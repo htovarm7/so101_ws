@@ -15,7 +15,7 @@ zone_detector:
     mount_x:   0.0
     mount_y:   0.0
     mount_z:  -0.02
-    mount_qx: -0.5
+    mount_qx: 0.5
     mount_qy:  0.5
     mount_qz: -0.5
     mount_qw: -0.5
@@ -23,9 +23,9 @@ zone_detector:
     target_frame: "base_link"
 
     # ── Input topics ──────────────────────────────────────────────────────────
-    color_image_topic: "/camera/camera/color/image_raw"
-    depth_image_topic: "/camera/camera/aligned_depth_to_color/image_raw"
-    camera_info_topic: "/camera/camera/color/camera_info"
+    color_image_topic: "/camera/cam_static/color/image_raw"
+    depth_image_topic: "/camera/cam_static/aligned_depth_to_color/image_raw"
+    camera_info_topic: "/camera/cam_static/color/camera_info"
 
     # ── Depth ─────────────────────────────────────────────────────────────────
     depth_scale: 0.001

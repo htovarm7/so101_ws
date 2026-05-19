@@ -1,0 +1,61 @@
+# Configuration for the ArUco-based camera localiser.
+#
+# Measure the centre of the marker in base_link (origin of the arm) with
+# a ruler: marker_position_in_base = [x, y, z] in metres.
+#
+# Orientation convention (cv2.aruco):
+#   marker +X = right edge in the pattern's reading orientation (TL→TR)
+#   marker +Y = up edge in reading orientation (BL→TL)
+#   marker +Z = out of the marker face (toward the observer)
+#
+# For a marker mounted VERTICALLY on a board, FACING the robot directly,
+# with the pattern upright (top of the pattern pointing up):
+#   marker +Z → -X_base   (face points back toward the robot)
+#   marker +Y → +Z_base   (top of pattern points up)
+#   marker +X → -Y_base   (right edge points to the robot's right)
+#   → marker_quat_in_base_xyzw = [-0.5, 0.5, 0.5, -0.5]
+#
+# For a marker flat on the table face-up, with the pattern's top edge
+# pointing in +X_base (away from the robot):
+#   → marker_quat_in_base_xyzw = [0.0, 0.0, -0.7071, 0.7071]
+#
+# For a flat-on-table marker with the pattern's top edge pointing in
+# +Y_base (to the robot's left):
+#   → marker_quat_in_base_xyzw = [0.0, 0.0, 0.0, 1.0]   (identity)
+#
+# Printing the marker:
+#   - DICT_5X5_50 (default) with marker_id = 0 is a robust default.
+#   - Recommended physical size: 5 cm side length.  Larger = sub-mm pose,
+#     smaller = harder for the camera to see at distance.
+#   - Easy generators:
+#       https://chev.me/arucogen/
+#       (set Dictionary=5x5, ID=0, size=50 mm, click Generate, print)
+#   - Print at 100% scale.  Measure the printed side with calipers and
+#     enter EXACT side in marker_size_m (~0.5 mm precision matters!).
+#
+# The position of the marker in base_link only needs to be measured ONCE
+# (assuming the marker doesn't move).  Any errors in this measurement
+# transfer 1:1 into the reported object positions, so be careful here:
+#   - The marker is glued to a flat board you don't move.
+#   - Measure from the projection of base_link's origin on the table.
+
+aruco_localizer:
+  ros__parameters:
+    color_image_topic: "/camera/cam_static/color/image_raw"
+    camera_info_topic: "/camera/cam_static/color/camera_info"
+    output_pose_topic: "/camera_pose_in_base"
+    output_seen_topic: "/aruco_seen"
+    debug_image_topic: "/aruco/debug_image"
+
+    marker_id:     675
+    marker_size_m: 0.07        # MEASURE the printed side with calipers
+    marker_dict:   "DICT_ARUCO_ORIGINAL"
+
+    # Marker centre position in base_link — MEASURE ONCE with a ruler.
+    # NOTE: this Z is for the VERTICAL board mount.  Measure from the
+    # base_link origin to the centre of the marker pattern on the board.
+    # The X is the forward distance to the marker plane; Y is lateral
+    # offset; Z is the height of the marker centre above base origin.
+    marker_position_in_base: [0.56, 0.075, 0.10]
+    # Vertical marker, facing the robot, pattern upright (see header).
+    marker_quat_in_base_xyzw: [-0.5, 0.5, 0.5, -0.5]

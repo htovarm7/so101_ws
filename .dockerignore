@@ -8,7 +8,6 @@ scripts
 docs
 so101_camera_calibration
 so101_inference
-so101_kinematics
 so101_teleop
 rosbag_to_lerobot
 episode_recorder

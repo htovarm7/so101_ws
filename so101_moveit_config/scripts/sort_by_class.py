@@ -34,7 +34,7 @@ from rclpy.executors import SingleThreadedExecutor
 from rclpy.node import Node
 from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
 from std_msgs.msg import String
-from tf_transformations import quaternion_from_euler
+from tf_transformations import quaternion_from_euler, quaternion_from_matrix
 
 
 def _spin_node_in_thread(node: Node) -> tuple[threading.Thread, SingleThreadedExecutor]:
@@ -62,27 +62,59 @@ REST_STATE = "rest"
 #  Pose helpers
 # ---------------------------------------------------------------------------
 
-def topdown_rpy_for(xyz_m) -> tuple[float, float, float]:
-    """Top-down orientation with yaw aimed radially at the target.
+def topdown_quat_for(xyz_m) -> tuple[float, float, float, float]:
+    """Quaternion (x,y,z,w) for gripper_frame_link in base_link.
 
-    The SO-101 is 5-DOF — fixing yaw=0 makes most top-down poses
-    unreachable.  ``atan2(y, x)`` is the natural redundancy resolution.
+    Builds the rotation matrix directly so the tilt rotates the gripper
+    *radially outward* (axis = tangential), which is the direction that
+    actually expands the reachable envelope for a 5-DOF top-down pick.
+    Earlier RPY-based attempts tilted around the wrong axis.
+
+    Convention pinned by tf2_echo of the real arm at scan_pose:
+      θ=0, ψ=0  →  X_gf = -Y_base, Y_gf = -X_base, Z_gf = -Z_base
+    For non-zero ψ (target's radial bearing), the whole frame rotates
+    around Z_base by ψ.  For non-zero θ (outward tilt), the gripper's
+    Z axis tips from -Z_base toward +radial; the wrist ends up closer
+    to the base by L_gripper·sin(θ), which is what unlocks far targets.
+
+    Tilt schedule chosen by experiment: 0 below r=0.18 m, growing at
+    4 rad/m up to a 0.7 rad cap (~40°).
     """
-    yaw = float(np.arctan2(xyz_m[1], xyz_m[0]))
-    return (0.0, float(np.pi), yaw)
+    r = float(np.hypot(xyz_m[0], xyz_m[1]))
+    theta = float(np.clip((r - 0.18) * 4.0, 0.0, 0.7))
+    psi = float(np.arctan2(xyz_m[1], xyz_m[0]))
+
+    c, s = float(np.cos(theta)), float(np.sin(theta))
+    # Axes of gripper_frame_link expressed in base_link, before ψ rotation:
+    # columns = [X_gf, Y_gf, Z_gf].  Verified at θ=0 against tf2_echo.
+    R0 = np.array([
+        [0.0, -c,  s],
+        [-1.0, 0.0, 0.0],
+        [0.0, -s, -c],
+    ])
+    cz, sz = float(np.cos(psi)), float(np.sin(psi))
+    Rpsi = np.array([
+        [cz, -sz, 0.0],
+        [sz,  cz, 0.0],
+        [0.0, 0.0, 1.0],
+    ])
+    R = Rpsi @ R0
+    T = np.eye(4)
+    T[:3, :3] = R
+    qx, qy, qz, qw = quaternion_from_matrix(T)
+    return (float(qx), float(qy), float(qz), float(qw))
 
 
-def make_pose_stamped(xyz_m, rpy_rad, frame_id: str = BASE_FRAME) -> PoseStamped:
-    q = quaternion_from_euler(*rpy_rad)
+def make_pose_stamped(xyz_m, quat_xyzw, frame_id: str = BASE_FRAME) -> PoseStamped:
     ps = PoseStamped()
     ps.header.frame_id = frame_id
     ps.pose.position.x = float(xyz_m[0])
     ps.pose.position.y = float(xyz_m[1])
     ps.pose.position.z = float(xyz_m[2])
-    ps.pose.orientation.x = q[0]
-    ps.pose.orientation.y = q[1]
-    ps.pose.orientation.z = q[2]
-    ps.pose.orientation.w = q[3]
+    ps.pose.orientation.x = float(quat_xyzw[0])
+    ps.pose.orientation.y = float(quat_xyzw[1])
+    ps.pose.orientation.z = float(quat_xyzw[2])
+    ps.pose.orientation.w = float(quat_xyzw[3])
     return ps
 
 
@@ -282,7 +314,12 @@ def solve_ik_and_plan(robot, arm, logger, pose: Pose,
         )
     robot_state.update()
     if not robot_state.set_from_ik(ARM_GROUP, pose, EE_FRAME, ik_timeout):
-        logger.error(f"IK failed for pose {pose.position}")
+        o = pose.orientation
+        logger.error(
+            f"IK failed for pose pos=({pose.position.x:+.4f}, "
+            f"{pose.position.y:+.4f}, {pose.position.z:+.4f}) "
+            f"quat=({o.x:+.4f}, {o.y:+.4f}, {o.z:+.4f}, {o.w:+.4f})"
+        )
         return False
     robot_state.update()
     arm.set_start_state_to_current_state()
@@ -340,12 +377,20 @@ class Config:
         d("zone_detection_timeout_s", 15.0)
         d("label_point_window_s", 0.15)
 
+        d("pick_x_offset_m",    0.0)
+        d("pick_y_offset_m",    0.0)
         d("pick_z_offset_m",    0.0)
         d("approach_height_m",  0.05)
         d("retreat_height_m",   0.08)
         d("place_z_offset_m",   0.04)
         d("place_approach_height_m", 0.08)
         d("place_retreat_height_m",  0.08)
+
+        # Hardcoded test override.  When all three components are non-zero,
+        # the perception centroid is replaced by this point — useful to
+        # verify the motion pipeline end-to-end without depending on the
+        # camera calibration.  Leave at [0, 0, 0] for normal operation.
+        d("test_pick_xyz", [0.0, 0.0, 0.0])
 
         g = node.get_parameter
         self.label_topic = g("object_label_topic").value
@@ -374,12 +419,21 @@ class Config:
         self.zone_timeout   = float(g("zone_detection_timeout_s").value)
         self.label_window   = float(g("label_point_window_s").value)
 
+        self.pick_x      = float(g("pick_x_offset_m").value)
+        self.pick_y      = float(g("pick_y_offset_m").value)
         self.pick_z      = float(g("pick_z_offset_m").value)
         self.approach    = float(g("approach_height_m").value)
         self.retreat     = float(g("retreat_height_m").value)
         self.place_z     = float(g("place_z_offset_m").value)
         self.place_app   = float(g("place_approach_height_m").value)
         self.place_ret   = float(g("place_retreat_height_m").value)
+
+        raw_test = list(g("test_pick_xyz").value or [])
+        if len(raw_test) == 3 and any(abs(float(v)) > 1e-9 for v in raw_test):
+            self.test_pick_xyz: Optional[np.ndarray] = np.array(
+                [float(v) for v in raw_test], dtype=float)
+        else:
+            self.test_pick_xyz = None
 
 
 def detect_zone(topic: str, samples: int, radius: float,
@@ -400,6 +454,164 @@ def detect_zone(topic: str, samples: int, radius: float,
     return mean
 
 
+def run_pick_cycle(robot, arm, gripper, ompl, pilz_lin,
+                   cfg, accept_labels, logger) -> bool:
+    """Run a single detect → pick → (optional place) → rest cycle.
+
+    Returns True if the cycle reached the end without aborting on a hard
+    error (IK fail, plan fail, gripper fail).  Missing zone detections do
+    not count as failures — the place phase is just skipped.
+    """
+    # ── 1) Detect object ─────────────────────────────────────────────────
+    obj_listener = ObjectListener(
+        cfg.label_topic, cfg.point_topic,
+        cfg.object_samples, cfg.object_radius,
+        cfg.label_window, cfg.object_timeout,
+        accept_labels,
+    )
+    _, obj_executor = _spin_node_in_thread(obj_listener)
+    obj_result = obj_listener.wait()
+    obj_executor.shutdown()
+    obj_listener.destroy_node()
+    if obj_result is None:
+        logger.error(
+            f"No stable object detection after {cfg.object_timeout:.0f} s"
+        )
+        return False
+    obj_label, obj_xyz, obj_frame = obj_result
+    if obj_frame != BASE_FRAME:
+        logger.warn(f"Object frame '{obj_frame}' != expected '{BASE_FRAME}'")
+    if cfg.test_pick_xyz is not None:
+        logger.warn(
+            f"test_pick_xyz override active — replacing detected "
+            f"{tuple(obj_xyz)} with hardcoded {tuple(cfg.test_pick_xyz)}"
+        )
+        obj_xyz = cfg.test_pick_xyz.copy()
+    zone_name = cfg.class_to_zone.get(obj_label)
+    if zone_name is None or zone_name not in cfg.zone_topics:
+        logger.error(
+            f"No zone mapped for label '{obj_label}' "
+            f"(known: {sorted(cfg.class_to_zone)})"
+        )
+        return False
+    zone_topic = cfg.zone_topics[zone_name]
+    logger.info(f"Object '{obj_label}' -> {zone_name} ({zone_topic})")
+
+    # ── 2) Detect zone (best effort; missing => skip place) ──────────────
+    zone_xyz = detect_zone(
+        zone_topic, cfg.zone_samples, cfg.zone_radius,
+        cfg.zone_timeout, zone_name, logger,
+    )
+    if zone_xyz is None:
+        logger.warn(
+            f"No stable {zone_name} detected — running PICK only "
+            "and skipping the place phase."
+        )
+
+    # ── 3) PICK ──────────────────────────────────────────────────────────
+    # DEBUG: dump the values that go into the pick math so we can see where
+    # any unexpected offset is coming from.
+    logger.info(
+        f"DEBUG cfg:  pick_x={cfg.pick_x}  pick_y={cfg.pick_y}  "
+        f"pick_z={cfg.pick_z}  approach={cfg.approach}  retreat={cfg.retreat}"
+    )
+    logger.info(f"DEBUG obj_xyz = {obj_xyz}")
+
+    pick_xyz = obj_xyz.copy()
+    pick_xyz[0] += cfg.pick_x
+    pick_xyz[1] += cfg.pick_y
+    pick_xyz[2] += cfg.pick_z
+    approach_xyz = pick_xyz.copy()
+    approach_xyz[2] = pick_xyz[2] + cfg.approach
+    retreat_xyz = pick_xyz.copy()
+    retreat_xyz[2] = pick_xyz[2] + cfg.retreat
+
+    logger.info(
+        f"DEBUG pick_xyz={pick_xyz}  approach_xyz={approach_xyz}  "
+        f"retreat_xyz={retreat_xyz}"
+    )
+
+    if not set_gripper(robot, gripper, logger, "open"):
+        return False
+    time.sleep(0.3)
+
+    logger.info(f"── Approach pick @ {approach_xyz} ──")
+    approach_pose = make_pose_stamped(approach_xyz, topdown_quat_for(pick_xyz))
+    if not solve_ik_and_plan(robot, arm, logger, approach_pose.pose, ompl):
+        return False
+    time.sleep(0.4)
+
+    logger.info(f"── Descend LIN @ {pick_xyz} ──")
+    pick_pose = make_pose_stamped(pick_xyz, topdown_quat_for(pick_xyz))
+    if not plan_linear_cartesian(robot, arm, logger, pick_pose, pilz_lin):
+        return False
+    time.sleep(0.2)
+
+    if not set_gripper(robot, gripper, logger, "closed"):
+        return False
+    time.sleep(0.4)
+
+    logger.info(f"── Retreat LIN @ {retreat_xyz} ──")
+    retreat_pose = make_pose_stamped(retreat_xyz, topdown_quat_for(pick_xyz))
+    if not plan_linear_cartesian(robot, arm, logger, retreat_pose, pilz_lin):
+        return False
+    time.sleep(0.3)
+
+    # ── 4) Back to scan_pose and (optional) re-detect zone ───────────────
+    logger.info(f"── Going to '{SCAN_STATE}' for fresh zone read ──")
+    if not goto_named_state(robot, arm, logger, SCAN_STATE, ompl):
+        return False
+    time.sleep(0.5)
+
+    if zone_xyz is not None:
+        zone_xyz = detect_zone(
+            zone_topic, cfg.zone_samples, cfg.zone_radius,
+            cfg.zone_timeout, f"{zone_name} (fresh)", logger,
+        )
+        if zone_xyz is None:
+            logger.warn(
+                f"Lost {zone_name} on re-detect — skipping place phase."
+            )
+
+    # ── 5) PLACE (only when a zone is available) ─────────────────────────
+    if zone_xyz is not None:
+        place_xyz = zone_xyz.copy()
+        place_xyz[2] += cfg.place_z
+        place_app = place_xyz.copy()
+        place_app[2] = place_xyz[2] + cfg.place_app
+        place_ret = place_xyz.copy()
+        place_ret[2] = place_xyz[2] + cfg.place_ret
+
+        logger.info(f"── Approach place @ {place_app} ──")
+        place_app_pose = make_pose_stamped(place_app, topdown_quat_for(place_xyz))
+        if not solve_ik_and_plan(robot, arm, logger, place_app_pose.pose, ompl):
+            return False
+        time.sleep(0.4)
+
+        logger.info(f"── Place LIN @ {place_xyz} ──")
+        place_pose = make_pose_stamped(place_xyz, topdown_quat_for(place_xyz))
+        if not plan_linear_cartesian(robot, arm, logger, place_pose, pilz_lin):
+            return False
+        time.sleep(0.2)
+
+        if not set_gripper(robot, gripper, logger, "open"):
+            return False
+        time.sleep(0.4)
+
+        logger.info(f"── Retreat LIN @ {place_ret} ──")
+        place_ret_pose = make_pose_stamped(place_ret, topdown_quat_for(place_xyz))
+        if not plan_linear_cartesian(robot, arm, logger, place_ret_pose, pilz_lin):
+            return False
+        time.sleep(0.3)
+    else:
+        logger.info("Place phase skipped (no zone detection).")
+
+    # ── 6) Back to scan_pose, ready for the next cycle ───────────────────
+    logger.info(f"── Going to '{SCAN_STATE}' (ready for next cycle) ──")
+    goto_named_state(robot, arm, logger, SCAN_STATE, ompl)
+    return True
+
+
 def main() -> None:
     rclpy.init()
     logger = rclpy.logging.get_logger("sort_by_class")
@@ -417,39 +629,7 @@ def main() -> None:
             os._exit(1)
         accept_labels = set(cfg.class_to_zone.keys())
 
-        # ── 1) Detect object ─────────────────────────────────────────────
-        obj_listener = ObjectListener(
-            cfg.label_topic, cfg.point_topic,
-            cfg.object_samples, cfg.object_radius,
-            cfg.label_window, cfg.object_timeout,
-            accept_labels,
-        )
-        _, obj_executor = _spin_node_in_thread(obj_listener)
-        obj_result = obj_listener.wait()
-        obj_executor.shutdown()
-        obj_listener.destroy_node()
-        if obj_result is None:
-            logger.error(
-                f"No stable object detection after "
-                f"{cfg.object_timeout:.0f} s — aborting."
-            )
-            os._exit(1)
-        obj_label, obj_xyz, obj_frame = obj_result
-        if obj_frame != BASE_FRAME:
-            logger.warn(
-                f"Object frame '{obj_frame}' != expected '{BASE_FRAME}'"
-            )
-        zone_name = cfg.class_to_zone.get(obj_label)
-        if zone_name is None or zone_name not in cfg.zone_topics:
-            logger.error(
-                f"No zone mapped for label '{obj_label}' "
-                f"(known: {sorted(cfg.class_to_zone)})"
-            )
-            os._exit(1)
-        zone_topic = cfg.zone_topics[zone_name]
-        logger.info(f"Object '{obj_label}' -> {zone_name} ({zone_topic})")
-
-        # ── MoveItPy ─────────────────────────────────────────────────────
+        # ── MoveItPy (built once, reused across pick cycles) ─────────────
         logger.info("Creating MoveItPy…")
         from moveit.planning import MoveItPy, MultiPipelinePlanRequestParameters
         robot = MoveItPy(
@@ -462,96 +642,64 @@ def main() -> None:
         ompl     = MultiPipelinePlanRequestParameters(robot, ["ompl_rrtc"])
         pilz_lin = MultiPipelinePlanRequestParameters(robot, ["pilz_lin"])
 
-        # ── 2) Detect both zones BEFORE the pick (sanity check) ──────────
-        zone_xyz = detect_zone(
-            zone_topic, cfg.zone_samples, cfg.zone_radius,
-            cfg.zone_timeout, zone_name, logger,
+        # Pre-position at scan_pose so the first detection is from the same
+        # pose subsequent cycles see.
+        logger.info(f"── Going to '{SCAN_STATE}' (initial) ──")
+        goto_named_state(robot, arm, logger, SCAN_STATE, ompl)
+
+        # Cycle trigger via a ROS topic: ros2 launch detaches stdin, so a
+        # readline() would just block forever.  Instead, publish to
+        # /sort_by_class/trigger from another terminal to start each cycle.
+        from std_msgs.msg import Empty
+        trigger_state = {"requested": False, "cycle": 0, "busy": False}
+
+        trigger_node = Node("sort_by_class_trigger")
+
+        def on_trigger(_msg):
+            if trigger_state["busy"]:
+                logger.warn(
+                    f"Cycle {trigger_state['cycle']} already in progress — "
+                    "trigger ignored."
+                )
+                return
+            trigger_state["requested"] = True
+
+        trigger_node.create_subscription(
+            Empty, "/sort_by_class/trigger", on_trigger, 10,
         )
-        if zone_xyz is None:
-            os._exit(1)
+        _, trigger_executor = _spin_node_in_thread(trigger_node)
 
-        # ── 3) PICK ──────────────────────────────────────────────────────
-        pick_xyz = obj_xyz.copy()
-        pick_xyz[2] += cfg.pick_z
-        approach_xyz = pick_xyz.copy()
-        approach_xyz[2] = pick_xyz[2] + cfg.approach
-        retreat_xyz = pick_xyz.copy()
-        retreat_xyz[2] = pick_xyz[2] + cfg.retreat
-
-        if not set_gripper(robot, gripper, logger, "open"):
-            os._exit(1)
-        time.sleep(0.3)
-
-        logger.info(f"── Approach pick @ {approach_xyz} ──")
-        approach_pose = make_pose_stamped(approach_xyz, topdown_rpy_for(pick_xyz))
-        if not solve_ik_and_plan(robot, arm, logger, approach_pose.pose, ompl):
-            os._exit(1)
-        time.sleep(0.4)
-
-        logger.info(f"── Descend LIN @ {pick_xyz} ──")
-        pick_pose = make_pose_stamped(pick_xyz, topdown_rpy_for(pick_xyz))
-        if not plan_linear_cartesian(robot, arm, logger, pick_pose, pilz_lin):
-            os._exit(1)
-        time.sleep(0.2)
-
-        if not set_gripper(robot, gripper, logger, "closed"):
-            os._exit(1)
-        time.sleep(0.4)
-
-        logger.info(f"── Retreat LIN @ {retreat_xyz} ──")
-        retreat_pose = make_pose_stamped(retreat_xyz, topdown_rpy_for(pick_xyz))
-        if not plan_linear_cartesian(robot, arm, logger, retreat_pose, pilz_lin):
-            os._exit(1)
-        time.sleep(0.3)
-
-        # ── 4) Back to scan_pose and RE-detect the destination zone ──────
-        logger.info(f"── Going to '{SCAN_STATE}' for fresh zone read ──")
-        if not goto_named_state(robot, arm, logger, SCAN_STATE, ompl):
-            os._exit(1)
-        time.sleep(0.5)
-
-        zone_xyz = detect_zone(
-            zone_topic, cfg.zone_samples, cfg.zone_radius,
-            cfg.zone_timeout, f"{zone_name} (fresh)", logger,
+        logger.info(
+            "Ready. Publish a trigger to run one pick cycle:\n"
+            "    ros2 topic pub --once /sort_by_class/trigger std_msgs/Empty {}"
         )
-        if zone_xyz is None:
-            os._exit(1)
 
-        # ── 5) PLACE ─────────────────────────────────────────────────────
-        place_xyz = zone_xyz.copy()
-        place_xyz[2] += cfg.place_z
-        place_app = place_xyz.copy()
-        place_app[2] = place_xyz[2] + cfg.place_app
-        place_ret = place_xyz.copy()
-        place_ret[2] = place_xyz[2] + cfg.place_ret
+        try:
+            while True:
+                if not trigger_state["requested"]:
+                    time.sleep(0.1)
+                    continue
+                trigger_state["requested"] = False
+                trigger_state["busy"] = True
+                trigger_state["cycle"] += 1
+                cycle = trigger_state["cycle"]
+                logger.info(f"── Starting cycle {cycle} ──")
+                try:
+                    ok = run_pick_cycle(
+                        robot, arm, gripper, ompl, pilz_lin,
+                        cfg, accept_labels, logger,
+                    )
+                    if ok:
+                        logger.info(f"Cycle {cycle} SUCCESS")
+                    else:
+                        logger.warn(f"Cycle {cycle} aborted")
+                finally:
+                    trigger_state["busy"] = False
+        finally:
+            trigger_executor.shutdown()
+            trigger_node.destroy_node()
 
-        logger.info(f"── Approach place @ {place_app} ──")
-        place_app_pose = make_pose_stamped(place_app, topdown_rpy_for(place_xyz))
-        if not solve_ik_and_plan(robot, arm, logger, place_app_pose.pose, ompl):
-            os._exit(1)
-        time.sleep(0.4)
-
-        logger.info(f"── Place LIN @ {place_xyz} ──")
-        place_pose = make_pose_stamped(place_xyz, topdown_rpy_for(place_xyz))
-        if not plan_linear_cartesian(robot, arm, logger, place_pose, pilz_lin):
-            os._exit(1)
-        time.sleep(0.2)
-
-        if not set_gripper(robot, gripper, logger, "open"):
-            os._exit(1)
-        time.sleep(0.4)
-
-        logger.info(f"── Retreat LIN @ {place_ret} ──")
-        place_ret_pose = make_pose_stamped(place_ret, topdown_rpy_for(place_xyz))
-        if not plan_linear_cartesian(robot, arm, logger, place_ret_pose, pilz_lin):
-            os._exit(1)
-        time.sleep(0.3)
-
-        # ── 6) Rest ──────────────────────────────────────────────────────
-        logger.info(f"── Going to '{REST_STATE}' ──")
-        goto_named_state(robot, arm, logger, REST_STATE, ompl)
-
-        logger.info("Pick-and-place SUCCESS")
+        logger.info("Exiting on user request.")
         try:
             rclpy.shutdown()
         except Exception:

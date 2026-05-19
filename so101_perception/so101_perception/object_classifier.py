@@ -7,6 +7,7 @@ colour+depth frame it finds the largest contour matching any enabled class, esti
 """
 
 import os
+import time
 from typing import Dict, List, Optional, Tuple
 
 import cv2
@@ -24,13 +25,53 @@ from cv_bridge import CvBridge
 import tf2_ros
 import tf2_geometry_msgs 
 
-from geometry_msgs.msg import PointStamped, TransformStamped
+from geometry_msgs.msg import PointStamped, PoseStamped, TransformStamped
 from sensor_msgs.msg import Image, CameraInfo
 from std_msgs.msg import String
 from visualization_msgs.msg import Marker
 from builtin_interfaces.msg import Duration
 
 from message_filters import ApproximateTimeSynchronizer, Subscriber
+
+
+def _quat_to_rotmat(qx: float, qy: float, qz: float, qw: float) -> np.ndarray:
+    n = qx * qx + qy * qy + qz * qz + qw * qw
+    s = 0.0 if n < 1e-12 else 2.0 / n
+    xx, yy, zz = qx * qx * s, qy * qy * s, qz * qz * s
+    xy, xz, yz = qx * qy * s, qx * qz * s, qy * qz * s
+    wx, wy, wz = qw * qx * s, qw * qy * s, qw * qz * s
+    return np.array([
+        [1.0 - (yy + zz), xy - wz, xz + wy],
+        [xy + wz, 1.0 - (xx + zz), yz - wx],
+        [xz - wy, yz + wx, 1.0 - (xx + yy)],
+    ], dtype=float)
+
+
+def _rotmat_to_quat(R: np.ndarray) -> Tuple[float, float, float, float]:
+    tr = float(R[0, 0] + R[1, 1] + R[2, 2])
+    if tr > 0:
+        s = 2.0 * (1.0 + tr) ** 0.5
+        return (float((R[2, 1] - R[1, 2]) / s),
+                float((R[0, 2] - R[2, 0]) / s),
+                float((R[1, 0] - R[0, 1]) / s),
+                float(0.25 * s))
+    if R[0, 0] > R[1, 1] and R[0, 0] > R[2, 2]:
+        s = 2.0 * (1.0 + R[0, 0] - R[1, 1] - R[2, 2]) ** 0.5
+        return (float(0.25 * s),
+                float((R[0, 1] + R[1, 0]) / s),
+                float((R[0, 2] + R[2, 0]) / s),
+                float((R[2, 1] - R[1, 2]) / s))
+    if R[1, 1] > R[2, 2]:
+        s = 2.0 * (1.0 + R[1, 1] - R[0, 0] - R[2, 2]) ** 0.5
+        return (float((R[0, 1] + R[1, 0]) / s),
+                float(0.25 * s),
+                float((R[1, 2] + R[2, 1]) / s),
+                float((R[0, 2] - R[2, 0]) / s))
+    s = 2.0 * (1.0 + R[2, 2] - R[0, 0] - R[1, 1]) ** 0.5
+    return (float((R[0, 2] + R[2, 0]) / s),
+            float((R[1, 2] + R[2, 1]) / s),
+            float(0.25 * s),
+            float((R[1, 0] - R[0, 1]) / s))
 
 
 # Distinct BGR colours for the debug overlay
@@ -64,7 +105,7 @@ class ObjectClassifier(Node):
         super().__init__("object_classifier")
 
         self.declare_parameter("color_image_topic",
-                               "/camera/cam_static/color/image_raw")
+                               "/camera/camera/color/image_raw")
         self.declare_parameter("depth_image_topic",
                                "/camera/cam_static/aligned_depth_to_color/image_raw")
         self.declare_parameter("camera_info_topic",
@@ -89,8 +130,6 @@ class ObjectClassifier(Node):
         self.declare_parameter("detection_hold_frames", 10)
         self._hold_frames = int(self.get_parameter("detection_hold_frames").value)
         self._last_idx: int = -1
-        self._last_contour = None
-        self._last_centroid = None
         self._frames_since_detection = 9999
 
         self.declare_parameter("config_file", "")
@@ -124,20 +163,63 @@ class ObjectClassifier(Node):
         self._camera_frame: str = "camera_color_optical_frame"
         self._bridge = CvBridge()
 
-        self._static_broadcaster = tf2_ros.StaticTransformBroadcaster(self)
+        # Dynamic (not static) so we can REPLACE the seed jaw→cam values
+        # with a fresh transform learned from ArUco.  The mount is
+        # physically constant, but the YAML seed is approximate — every
+        # fresh ArUco solve refines it, and the refined value is then
+        # used by the TF-fallback path when the marker goes out of view.
+        self._tf_broadcaster = tf2_ros.TransformBroadcaster(self)
         self._tf_buffer   = tf2_ros.Buffer()
         self._tf_listener = tf2_ros.TransformListener(self._tf_buffer, self)
+        # Latest jaw→cam transform.  Seeded from YAML params; overwritten
+        # by every successful ArUco solve via _learn_mount_from_aruco.
+        self._mount_T_jaw_to_cam = self._build_seed_mount_matrix()
+        # Broadcast at 30 Hz so the TF stays alive in tf2's cache even
+        # when ArUco has been lost for several seconds (default cache
+        # window is 10 s otherwise).
+        self.create_timer(1.0 / 30.0, self._broadcast_mount_tf)
 
-        sensor_qos = QoSProfile(
+        # ── ArUco-anchored camera localisation (optional override) ─────
+        # When `/camera_pose_in_base` arrives with a fresh timestamp we
+        # bypass the URDF/TF chain entirely and transform deprojected
+        # points using the camera pose derived from the fiducial.  This
+        # eliminates FK/backlash/mount-calibration error on every frame
+        # the marker is in view.  Falls back to TF when marker is lost.
+        self.declare_parameter("aruco_pose_topic", "/camera_pose_in_base")
+        # Cache the last good ArUco-derived camera pose for this long
+        # before falling back to the TF/URDF chain.  Generous default —
+        # the marker can be briefly occluded by the gripper without
+        # making the published detection jitter.
+        self.declare_parameter("aruco_freshness_s", 5.0)
+        self._aruco_freshness = float(self.get_parameter("aruco_freshness_s").value)
+        self._aruco_T_b2c: Optional[np.ndarray] = None  # 4x4
+        self._aruco_T_b2c_t: float = 0.0
+        self.create_subscription(
+            PoseStamped,
+            self.get_parameter("aruco_pose_topic").value,
+            self._on_aruco_pose,
+            10,
+        )
+
+        # RealSense publishes images BEST_EFFORT (sensor-data convention).
+        # A RELIABLE subscription is silently incompatible — connection
+        # fails and no frames flow.  CameraInfo stays RELIABLE because
+        # it's latched and we never want to miss the first message.
+        image_qos = QoSProfile(
+            reliability=ReliabilityPolicy.BEST_EFFORT,
+            history=HistoryPolicy.KEEP_LAST,
+            depth=1,
+        )
+        info_qos = QoSProfile(
             reliability=ReliabilityPolicy.RELIABLE,
             history=HistoryPolicy.KEEP_LAST,
             depth=1,
         )
         self._info_sub = self.create_subscription(
-            CameraInfo, info_topic, self._camera_info_cb, sensor_qos
+            CameraInfo, info_topic, self._camera_info_cb, info_qos
         )
-        self._color_sub = Subscriber(self, Image, color_topic, qos_profile=sensor_qos)
-        self._depth_sub = Subscriber(self, Image, depth_topic, qos_profile=sensor_qos)
+        self._color_sub = Subscriber(self, Image, color_topic, qos_profile=image_qos)
+        self._depth_sub = Subscriber(self, Image, depth_topic, qos_profile=image_qos)
         self._sync = ApproximateTimeSynchronizer(
             [self._color_sub, self._depth_sub], queue_size=5, slop=0.05
         )
@@ -209,24 +291,69 @@ class ObjectClassifier(Node):
         )
         return []
 
-    # TF bridge
+    # TF bridge — auto-calibrating mount
 
-    def _publish_camera_tf(self) -> None:
-        tf = TransformStamped()
-        tf.header.stamp = self.get_clock().now().to_msg()
-        tf.header.frame_id = self._parent_link
-        tf.child_frame_id  = self._camera_frame
-        tf.transform.translation.x = float(self._mount["x"])
-        tf.transform.translation.y = float(self._mount["y"])
-        tf.transform.translation.z = float(self._mount["z"])
-        tf.transform.rotation.x    = float(self._mount["qx"])
-        tf.transform.rotation.y    = float(self._mount["qy"])
-        tf.transform.rotation.z    = float(self._mount["qz"])
-        tf.transform.rotation.w    = float(self._mount["qw"])
-        self._static_broadcaster.sendTransform(tf)
-        self.get_logger().info(
-            f"Static TF broadcast: {self._parent_link} -> {self._camera_frame}"
-        )
+    def _build_seed_mount_matrix(self) -> np.ndarray:
+        """4x4 jaw→cam transform built from YAML mount_x/y/z + mount_q*.
+
+        Used as the initial value until ArUco refines it.  The seed may
+        be inaccurate; that's the whole point of relearning it from the
+        fiducial.
+        """
+        m = self._mount
+        T = np.eye(4)
+        T[:3, :3] = _quat_to_rotmat(m["qx"], m["qy"], m["qz"], m["qw"])
+        T[:3, 3] = [m["x"], m["y"], m["z"]]
+        return T
+
+    def _broadcast_mount_tf(self) -> None:
+        """30 Hz dynamic broadcast of the latest jaw→cam transform."""
+        T = self._mount_T_jaw_to_cam
+        msg = TransformStamped()
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.header.frame_id = self._parent_link
+        msg.child_frame_id  = self._camera_frame
+        msg.transform.translation.x = float(T[0, 3])
+        msg.transform.translation.y = float(T[1, 3])
+        msg.transform.translation.z = float(T[2, 3])
+        qx, qy, qz, qw = _rotmat_to_quat(T[:3, :3])
+        msg.transform.rotation.x = qx
+        msg.transform.rotation.y = qy
+        msg.transform.rotation.z = qz
+        msg.transform.rotation.w = qw
+        self._tf_broadcaster.sendTransform(msg)
+
+    def _learn_mount_from_aruco(self) -> None:
+        """Refine jaw→cam from the latest ArUco T_base_from_cam.
+
+        Composition: T_jaw_from_cam = inv(T_base_from_jaw_FK) @ T_base_from_cam_ArUco.
+        The mount is physically rigid, so a value learned now remains
+        valid after the marker disappears.  Skips silently if joint_states
+        TF isn't ready yet.
+        """
+        if self._aruco_T_b2c is None:
+            return
+        try:
+            # NO timeout: this runs inside the ArUco callback on the
+            # single-threaded executor.  A blocking timeout deadlocks
+            # the executor against its own TransformListener (the
+            # listener can't process /tf while we wait for /tf), which
+            # starves _image_cb and eventually backpressures the
+            # RealSense USB pipeline into a frames-timeout.
+            ts = self._tf_buffer.lookup_transform(
+                self._target_frame, self._parent_link,
+                rclpy.time.Time(),
+            )
+        except (tf2_ros.LookupException,
+                tf2_ros.ExtrapolationException,
+                tf2_ros.ConnectivityException):
+            return
+        t = ts.transform.translation
+        q = ts.transform.rotation
+        T_b2j = np.eye(4)
+        T_b2j[:3, :3] = _quat_to_rotmat(q.x, q.y, q.z, q.w)
+        T_b2j[:3, 3] = [t.x, t.y, t.z]
+        self._mount_T_jaw_to_cam = np.linalg.inv(T_b2j) @ self._aruco_T_b2c
 
     # Camera intrinsics
 
@@ -242,7 +369,6 @@ class ObjectClassifier(Node):
             f"CameraInfo: fx={self._fx:.1f} fy={self._fy:.1f} "
             f"cx={self._cx:.1f} cy={self._cy:.1f} frame={self._camera_frame}"
         )
-        self._publish_camera_tf()
 
     # Main pipeline
     def _detect_best(self, hsv: np.ndarray):
@@ -306,18 +432,27 @@ class ObjectClassifier(Node):
 
         hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV)
         idx, contour, area, centroid = self._detect_best(hsv)
+
+        # Hold the LABEL across short detection gaps so downstream
+        # label-binding doesn't flicker.  Do NOT hold the 3-D point —
+        # republishing a stale centroid against fresh depth produces
+        # phantom positions on whatever surface is now under that pixel.
         if idx >= 0:
             self._last_idx = idx
-            self._last_contour = contour
-            self._last_centroid = centroid
             self._frames_since_detection = 0
+            held_label_idx = idx
         else:
             self._frames_since_detection += 1
-            if self._frames_since_detection <= self._hold_frames and self._last_idx >= 0:
-                idx = self._last_idx
-                contour = self._last_contour
-                centroid = self._last_centroid
-        label = self._classes[idx].label if idx >= 0 else self._none_label
+            held_label_idx = (
+                self._last_idx
+                if self._frames_since_detection <= self._hold_frames
+                else -1
+            )
+
+        label = (
+            self._classes[held_label_idx].label
+            if held_label_idx >= 0 else self._none_label
+        )
         self._label_pub.publish(String(data=label))
 
         debug = bgr.copy()
@@ -363,9 +498,58 @@ class ObjectClassifier(Node):
             return None
         return float(np.median(patch) * self._depth_scale)
 
+    def _on_aruco_pose(self, msg: PoseStamped) -> None:
+        """Cache the camera pose in base_link reported by aruco_localizer.
+
+        Stores a 4x4 T_base_to_cam matrix plus a wall-clock timestamp so
+        ``_publish_point`` can decide if the pose is still fresh enough
+        to use as the canonical transform.
+        """
+        p = msg.pose.position
+        q = msg.pose.orientation
+        T = np.eye(4)
+        T[:3, :3] = _quat_to_rotmat(q.x, q.y, q.z, q.w)
+        T[:3, 3] = [p.x, p.y, p.z]
+        self._aruco_T_b2c = T
+        self._aruco_T_b2c_t = time.time()
+        # Refine the wrist→camera mount transform.  The mount is rigid,
+        # so this value stays valid after the marker goes out of view —
+        # which is exactly when the TF-fallback path needs it.
+        self._learn_mount_from_aruco()
+
     def _publish_point(self, stamp, X: float, Y: float, Z: float, label: str) -> None:
+        # ── Preferred path: ArUco-anchored camera pose ─────────────────
+        # When the fiducial localiser has reported a fresh camera-in-base
+        # pose, multiply (X, Y, Z) in camera frame by it directly.  This
+        # bypasses TF / FK / mount-calibration error entirely.
+        now = time.time()
+        if (self._aruco_T_b2c is not None
+                and now - self._aruco_T_b2c_t <= self._aruco_freshness):
+            p_cam = np.array([float(X), float(Y), float(Z), 1.0], dtype=float)
+            p_base = self._aruco_T_b2c @ p_cam
+            tgt_pt = PointStamped()
+            tgt_pt.header.stamp = stamp
+            tgt_pt.header.frame_id = self._target_frame
+            tgt_pt.point.x = float(p_base[0])
+            tgt_pt.point.y = float(p_base[1])
+            tgt_pt.point.z = float(p_base[2])
+            self._point_pub.publish(tgt_pt)
+            self._publish_marker(tgt_pt.header, tgt_pt.point.x,
+                                 tgt_pt.point.y, tgt_pt.point.z, label)
+            self.get_logger().info(
+                f"[{label}] cam=({X:+.3f}, {Y:+.3f}, {Z:+.3f}) "
+                f"base=({p_base[0]:+.3f}, {p_base[1]:+.3f}, {p_base[2]:+.3f}) "
+                f"[aruco]",
+                throttle_duration_sec=0.3,
+            )
+            return
+
+        # ── Fallback: classical TF chain (URDF + mount calibration) ────
         cam_pt = PointStamped()
-        cam_pt.header.stamp = stamp
+        # Use zero time = "latest available" to avoid extrapolation errors when
+        # the robot's joint_states TF chain lags behind the camera frame stamp.
+        # Safe here because detection runs at scan_pose with the arm static.
+        cam_pt.header.stamp = rclpy.time.Time().to_msg()
         cam_pt.header.frame_id = self._camera_frame
         cam_pt.point.x = float(X)
         cam_pt.point.y = float(Y)
@@ -375,7 +559,7 @@ class ObjectClassifier(Node):
             tgt_pt = self._tf_buffer.transform(
                 cam_pt,
                 self._target_frame,
-                timeout=RclDuration(seconds=0.1),
+                timeout=RclDuration(seconds=0.2),
             )
         except (tf2_ros.LookupException,
                 tf2_ros.ExtrapolationException,
@@ -385,17 +569,25 @@ class ObjectClassifier(Node):
             )
             return
 
+        # Restore the real frame stamp so downstream consumers (sort_by_class)
+        # can correlate this point with the label message via timestamp.
+        tgt_pt.header.stamp = stamp
         self._point_pub.publish(tgt_pt)
+        self._publish_marker(tgt_pt.header, tgt_pt.point.x,
+                             tgt_pt.point.y, tgt_pt.point.z, label)
 
+    def _publish_marker(self, header, x: float, y: float, z: float,
+                        label: str) -> None:
+        """Emit the RViz sphere marker at (x, y, z) in `header.frame_id`."""
         m = Marker()
-        m.header = tgt_pt.header
+        m.header = header
         m.ns = "object_classifier"
         m.id = 0
         m.type = Marker.SPHERE
         m.action = Marker.ADD
-        m.pose.position.x = tgt_pt.point.x
-        m.pose.position.y = tgt_pt.point.y
-        m.pose.position.z = tgt_pt.point.z
+        m.pose.position.x = float(x)
+        m.pose.position.y = float(y)
+        m.pose.position.z = float(z)
         m.pose.orientation.w = 1.0
         m.scale.x = m.scale.y = m.scale.z = 0.04
         idx = next((i for i, s in enumerate(self._classes) if s.label == label), 0)

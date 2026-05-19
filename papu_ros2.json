@@ -31,7 +31,7 @@
         "wrist_roll": {
             "id": 5,
             "drive_mode": 0,
-            "homing_offset": 1564,
+            "homing_offset": 540,
             "range_min": 0,
             "range_max": 4095
         },
