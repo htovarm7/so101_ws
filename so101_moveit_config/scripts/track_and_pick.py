@@ -58,9 +58,9 @@ BASE_FRAME = "base_link"
 # scan_pose joints — see SRDF
 SCAN_POSE_JOINTS = {
     "shoulder_pan":   0.0,
-    "shoulder_lift": -1.0996,
-    "elbow_flex":     0.1745,
-    "wrist_flex":     1.3614,
+    "shoulder_lift": -1.0296,
+    "elbow_flex":     0.03445,
+    "wrist_flex":     1.6514,
     "wrist_roll":     1.5708,
 }
 

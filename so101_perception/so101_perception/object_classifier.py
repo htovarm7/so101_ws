@@ -201,16 +201,25 @@ class ObjectClassifier(Node):
             10,
         )
 
-        sensor_qos = QoSProfile(
+        # RealSense publishes images BEST_EFFORT (sensor-data convention).
+        # A RELIABLE subscription is silently incompatible — connection
+        # fails and no frames flow.  CameraInfo stays RELIABLE because
+        # it's latched and we never want to miss the first message.
+        image_qos = QoSProfile(
+            reliability=ReliabilityPolicy.BEST_EFFORT,
+            history=HistoryPolicy.KEEP_LAST,
+            depth=1,
+        )
+        info_qos = QoSProfile(
             reliability=ReliabilityPolicy.RELIABLE,
             history=HistoryPolicy.KEEP_LAST,
             depth=1,
         )
         self._info_sub = self.create_subscription(
-            CameraInfo, info_topic, self._camera_info_cb, sensor_qos
+            CameraInfo, info_topic, self._camera_info_cb, info_qos
         )
-        self._color_sub = Subscriber(self, Image, color_topic, qos_profile=sensor_qos)
-        self._depth_sub = Subscriber(self, Image, depth_topic, qos_profile=sensor_qos)
+        self._color_sub = Subscriber(self, Image, color_topic, qos_profile=image_qos)
+        self._depth_sub = Subscriber(self, Image, depth_topic, qos_profile=image_qos)
         self._sync = ApproximateTimeSynchronizer(
             [self._color_sub, self._depth_sub], queue_size=5, slop=0.05
         )
@@ -325,10 +334,15 @@ class ObjectClassifier(Node):
         if self._aruco_T_b2c is None:
             return
         try:
+            # NO timeout: this runs inside the ArUco callback on the
+            # single-threaded executor.  A blocking timeout deadlocks
+            # the executor against its own TransformListener (the
+            # listener can't process /tf while we wait for /tf), which
+            # starves _image_cb and eventually backpressures the
+            # RealSense USB pipeline into a frames-timeout.
             ts = self._tf_buffer.lookup_transform(
                 self._target_frame, self._parent_link,
                 rclpy.time.Time(),
-                timeout=RclDuration(seconds=0.05),
             )
         except (tf2_ros.LookupException,
                 tf2_ros.ExtrapolationException,

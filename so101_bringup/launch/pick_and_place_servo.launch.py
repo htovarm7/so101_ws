@@ -152,13 +152,23 @@ def _launch_setup(context, *args, **kwargs):
     actions.append(cartesian)
 
     # ── Orchestrator selector ──────────────────────────────────────────────
-    # `orchestrator`: "track_and_pick" (visual servoing, recommended),
-    #                 "sort_by_class" (plan-once / Placo IK),
-    #                 "none" (only hardware + perception + Placo, drive manually)
+    # `orchestrator`: "gaze_servo"     (pan + tilt only, scan-sphere target),
+    #                 "track_and_pick" (hover-then-pick, Cartesian IK),
+    #                 "sort_by_class"  (plan-once / Placo IK),
+    #                 "none"           (only hardware + perception + Placo)
     orchestrator = LaunchConfiguration("orchestrator").perform(context)
     pkg_moveit_cfg = get_package_share_directory("so101_moveit_config")
     pick_place_cfg = os.path.join(pkg_moveit_cfg, "config", "pick_and_place.yaml")
-    if orchestrator == "track_and_pick":
+    if orchestrator == "gaze_servo":
+        actions.append(Node(
+            name="gaze_servo",
+            package="so101_moveit_config",
+            executable="gaze_servo.py",
+            output="screen",
+            emulate_tty=True,
+            parameters=[pick_place_cfg],
+        ))
+    elif orchestrator == "track_and_pick":
         actions.append(Node(
             name="track_and_pick",
             package="so101_moveit_config",
@@ -181,7 +191,7 @@ def _launch_setup(context, *args, **kwargs):
     else:
         raise RuntimeError(
             f"Unknown orchestrator '{orchestrator}'.  "
-            f"Use track_and_pick | sort_by_class | none."
+            f"Use gaze_servo | track_and_pick | sort_by_class | none."
         )
 
     return actions
@@ -195,8 +205,8 @@ def generate_launch_description():
         DeclareLaunchArgument("joint_config_file", default_value="/calibration/papu.json"),
         DeclareLaunchArgument("use_cameras", default_value="true"),
         DeclareLaunchArgument("use_perception", default_value="true"),
-        DeclareLaunchArgument("orchestrator", default_value="track_and_pick",
-                              description="track_and_pick | sort_by_class | none"),
+        DeclareLaunchArgument("orchestrator", default_value="gaze_servo",
+                              description="gaze_servo | track_and_pick | sort_by_class | none"),
         DeclareLaunchArgument("use_rviz", default_value="true"),
         OpaqueFunction(function=_launch_setup),
     ])
